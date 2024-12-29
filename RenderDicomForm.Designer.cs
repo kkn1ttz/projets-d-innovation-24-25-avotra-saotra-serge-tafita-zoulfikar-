@@ -15,6 +15,10 @@
         {
             if (disposing && (components != null))
             {
+                moveTimer?.Stop();
+                moveTimer?.Dispose();
+                render?.Dispose();
+                gl?.Dispose();
                 components.Dispose();
             }
             base.Dispose(disposing);

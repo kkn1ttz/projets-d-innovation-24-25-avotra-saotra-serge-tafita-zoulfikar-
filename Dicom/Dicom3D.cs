@@ -34,11 +34,17 @@ namespace DeepBridgeWindowsApp.Dicom
         private int vertexArrayObject;
         private readonly Action<ProcessingProgress> progressCallback;
         private readonly object lockObject = new object();
+        private int frontClip = 0;
+        private int backClip = 0;
+        private int totalSlices;
+        private int currentVisibleIndices;
 
         public Dicom3D(DicomDisplayManager ddm, Action<ProcessingProgress> progressCallback = null)
         {
             this.progressCallback = progressCallback;
+            this.totalSlices = ddm.GetTotalSlices();
             ProcessSlices(ddm);
+            currentVisibleIndices = indices.Count;
         }
 
         private void ProcessSlices(DicomDisplayManager ddm)
@@ -123,6 +129,36 @@ namespace DeepBridgeWindowsApp.Dicom
                 progress.CurrentValue = completedSlices;
                 progressCallback?.Invoke(progress);
             });
+        }
+
+        public void SetClipPlanes(int front, int back)
+        {
+            frontClip = front;
+            backClip = back;
+            UpdateVisibleVertices();
+        }
+
+        private void UpdateVisibleVertices()
+        {
+            var visibleIndices = new List<int>();
+
+            for (int i = 0; i < indices.Count; i++)
+            {
+                int vertexIndex = indices[i];
+                float zPos = vertices[vertexIndex].Z + 0.5f; // Ajuster pour le décalage de -0.5f
+                int slice = (int)(zPos * totalSlices);
+
+                if (slice >= frontClip && slice <= (totalSlices - backClip - 1))
+                {
+                    visibleIndices.Add(indices[i]);
+                }
+            }
+
+            GL.BindBuffer(BufferTarget.ElementArrayBuffer, elementBufferObject[0]);
+            GL.BufferData(BufferTarget.ElementArrayBuffer, visibleIndices.Count * sizeof(int),
+                visibleIndices.ToArray(), BufferUsageHint.DynamicDraw);
+
+            currentVisibleIndices = visibleIndices.Count;
         }
 
         public void InitializeGL()

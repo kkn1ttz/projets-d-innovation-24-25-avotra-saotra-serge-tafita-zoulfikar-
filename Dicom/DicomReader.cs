@@ -59,7 +59,7 @@ namespace DeepBridgeWindowsApp.DICOM
                     }
                     return new DicomMetadata(dicomObject);
                 })
-                .OrderBy(slice => slice.ContentTime) // Assuming SeriesTime is a property of DicomMetadata
+                .OrderBy(slice => slice.SliceLocation) // Assuming SeriesTime is a property of DicomMetadata
                 .ToArray();
         }
     }
