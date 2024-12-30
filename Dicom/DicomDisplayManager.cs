@@ -25,7 +25,7 @@ namespace DeepBridgeWindowsApp.Dicom
             windowCenter = slices.Length > 0 ? slices[0].WindowCenter : 0;
         }
 
-        public DicomMetadata GetCurrentSlice(int sliceIndex)
+        public DicomMetadata GetSlice(int sliceIndex)
         {
             return slices[sliceIndex];
         }

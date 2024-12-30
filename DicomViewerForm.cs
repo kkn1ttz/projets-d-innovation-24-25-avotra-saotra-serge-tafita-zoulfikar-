@@ -56,7 +56,7 @@ namespace DeepBridgeWindowsApp
                 CellBorderStyle = TableLayoutPanelCellBorderStyle.Single
             };
 
-            var currentSlice = displayManager.GetCurrentSlice(displayManager.GetCurrentSliceIndex() + 1);
+            var currentSlice = displayManager.GetSlice(displayManager.GetCurrentSliceIndex() + 1);
 
             AddInfoRow(patientInfo, "Patient ID", currentSlice.PatientID);
             AddInfoRow(patientInfo, "Patient Name", currentSlice.PatientName);

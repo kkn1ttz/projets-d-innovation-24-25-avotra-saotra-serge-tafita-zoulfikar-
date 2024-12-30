@@ -49,18 +49,28 @@ namespace DeepBridgeWindowsApp.Dicom
 
         private void ProcessSlices(DicomDisplayManager ddm)
         {
-            float sliceThickness = (float)ddm.GetCurrentSlice(0).SliceThickness;
-            float zScale = sliceThickness * 0.25f;
+            // Get pixel spacing (in mm)
+            var pixelSpacing = ddm.GetSlice(0).PixelSpacing;
+            float pixelSpacingX = (float)pixelSpacing;
+            float pixelSpacingY = (float)pixelSpacing;
 
-            // Calculate exact capacity needed
+            // Get physical dimensions of a slice in mm
             var firstSlice = ddm.GetCurrentSliceImage();
-            long totalPixels = (long)firstSlice.Width * firstSlice.Height * ddm.GetTotalSlices();
+            float physicalWidth = firstSlice.Width * pixelSpacingX;
+            float physicalHeight = firstSlice.Height * pixelSpacingY;
             firstSlice.Dispose();
 
-            // Create lists with chunks instead of one giant list
-            var vertexChunks = new List<List<Vector3>>();
-            var colorChunks = new List<List<Vector3>>();
-            var indexChunks = new List<List<int>>();
+            // Get z-axis physical dimensions
+            float firstSliceLocation = (float)ddm.GetSlice(0).SliceLocation;
+            float lastSliceLocation = (float)ddm.GetSlice(ddm.GetTotalSlices() - 1).SliceLocation;
+            float totalPhysicalDepth = Math.Abs(lastSliceLocation - firstSliceLocation);
+            float sliceThickness = (float)ddm.GetSlice(0).SliceThickness;
+
+            // Calculate scaling factors
+            float maxDimension = Math.Max(Math.Max(physicalWidth, physicalHeight), totalPhysicalDepth);
+            float scaleX = physicalWidth / maxDimension;
+            float scaleY = physicalHeight / maxDimension;
+            float scaleZ = totalPhysicalDepth / maxDimension;
 
             var completedSlices = 0;
             var progress = new ProcessingProgress
@@ -78,6 +88,11 @@ namespace DeepBridgeWindowsApp.Dicom
 
                 ddm.SetSliceIndex(z);
                 var slice = ddm.GetCurrentSliceImage();
+                float currentSliceLocation = (float)ddm.GetSlice(z).SliceLocation;
+
+                // Calculate z position with more explicit steps
+                float normalizedZ = ((currentSliceLocation - firstSliceLocation) / totalPhysicalDepth) - 0.5f;
+                float finalZ = normalizedZ * scaleZ;
 
                 BitmapData bitmapData = slice.LockBits(
                     new Rectangle(0, 0, slice.Width, slice.Height),
@@ -101,12 +116,16 @@ namespace DeepBridgeWindowsApp.Dicom
 
                             if (intensity > 0.15f)
                             {
-                                localVertices.Add(new Vector3(
-                                    (x / (float)slice.Width) - 0.5f,
-                                    (y / (float)slice.Height) - 0.5f,
-                                    ((z / ((float)ddm.GetTotalSlices()) / zScale)) - 0.5f
-                                ));
+                                float physicalX = (x * pixelSpacingX);
+                                float physicalY = (y * pixelSpacingY);
 
+                                Vector3 vertex = new Vector3(
+                                    ((physicalX / physicalWidth) - 0.5f) * scaleX,
+                                    ((physicalY / physicalHeight) - 0.5f) * scaleY,
+                                    finalZ
+                                );
+
+                                localVertices.Add(vertex);
                                 localColors.Add(new Vector3(intensity, intensity, intensity));
                                 localIndices.Add(localVertices.Count - 1);
                             }
