@@ -44,7 +44,8 @@ namespace DeepBridgeWindowsApp
             {
                 Dock = DockStyle.Left,
                 Width = 250,
-                BackColor = SystemColors.Control
+                BackColor = SystemColors.Control,
+                Padding = new Padding(5, 5, 5, 10),
             };
 
             var patientInfo = new TableLayoutPanel
@@ -52,7 +53,6 @@ namespace DeepBridgeWindowsApp
                 Dock = DockStyle.Top,
                 AutoSize = true,
                 ColumnCount = 2,
-                Padding = new Padding(5),
                 CellBorderStyle = TableLayoutPanelCellBorderStyle.Single
             };
 
@@ -63,7 +63,6 @@ namespace DeepBridgeWindowsApp
             AddInfoRow(patientInfo, "Patient Sex", currentSlice.PatientSex);
             AddInfoRow(patientInfo, "Modality", currentSlice.Modality);
             AddInfoRow(patientInfo, "Resolution", currentSlice.Rows + " x " + currentSlice.Columns);
-            AddInfoRow(patientInfo, "Content Time", currentSlice.ContentTime);
             infoPanel.Controls.Add(patientInfo);
 
             var buttonPanel = new Panel
@@ -76,7 +75,7 @@ namespace DeepBridgeWindowsApp
             {
                 Dock = DockStyle.Bottom,
                 Text = "3D Render",
-                Margin = new Padding(5, 0, 0, 0)
+                AutoSize = true,
             };
             renderButton.Click += Button_Click;
 

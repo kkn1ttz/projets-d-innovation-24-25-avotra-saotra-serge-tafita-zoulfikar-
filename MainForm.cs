@@ -17,7 +17,7 @@ namespace DeepBridgeWindowsApp
     public partial class MainForm : Form
     {
         private string currentDirectory;
-        private readonly string defaultDirectory = @"C:\dataset_chu\scan\SF103E8_10.241.3.232_20210118173228207_CT_SR\SF103E8_10.241.3.232_20210118173228207";
+        private readonly string defaultDirectory = @"C:\dataset_chu_nice_2020_2021\scan\SF103E8_10.241.3.232_20210118173228207_CT_SR\SF103E8_10.241.3.232_20210118173228207";
         //private readonly string defaultDirectory = @"C:\dataset_chu_nice_2020_2021\scan\SF103E8_10.241.3.232_20210118174910223_CT\SF103E8_10.241.3.232_20210118174910223";
         private Panel rightPanel;
         private ListView contentListView;

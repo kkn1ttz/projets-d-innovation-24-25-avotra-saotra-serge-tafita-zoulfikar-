@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Printing;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -45,6 +46,23 @@ namespace DeepBridgeWindowsApp
         private TrackBar backClipTrackBar;
         private Label frontClipLabel;
         private Label backClipLabel;
+
+        // Slice Button
+        private Button sliceButton;
+        private PictureBox slicePreview;
+        private NumericUpDown slicePosition;
+        private CheckBox checkBox;
+
+        // Slice indicator
+        private int[] sliceIndicatorVBO;
+        private readonly float[] sliceIndicatorVertices = {
+            // Front face vertices
+            0f, 0.5f, 0.5f,
+            0f, -0.5f, 0.5f,
+            0f, -0.5f, -0.5f,
+            0f, 0.5f, -0.5f,
+        };
+        private int sliceWidth;
 
         // Shaders
         private int shaderProgram;
@@ -92,6 +110,7 @@ namespace DeepBridgeWindowsApp
         {
             this.ddm = ddm;
             this.dicom = this.ddm.globalView;
+            this.sliceWidth = ddm.GetSlice(0).Columns;
             InitializeComponents();
             InitializeKeyboardControls();
         }
@@ -112,7 +131,8 @@ namespace DeepBridgeWindowsApp
             var leftPanel = new Panel
             {
                 Dock = DockStyle.Left,
-                Width = 150,
+                Width = 200,
+                Padding = new Padding(5, 5, 5, 10),
                 BackColor = Color.FromArgb(40, 40, 40)
             };
 
@@ -121,7 +141,8 @@ namespace DeepBridgeWindowsApp
             {
                 Dock = DockStyle.Fill,
                 FlowDirection = FlowDirection.TopDown,
-                AutoSize = true,
+                //AutoSize = true,
+                Width = 200,
                 WrapContents = false
             };
 
@@ -130,7 +151,6 @@ namespace DeepBridgeWindowsApp
             {
                 AutoSize = true,
                 ForeColor = Color.White,
-                Padding = new Padding(5),
                 Font = new Font(Font.FontFamily, 9),
                 Text = "Contrôles:\n\n" +
                        "ZQSD/WASD :\nDéplacement\n\n" +
@@ -143,10 +163,10 @@ namespace DeepBridgeWindowsApp
             // Panel pour les contrôles de découpage
             var clipPanel = new Panel
             {
-                Height = 100,
-                Width = 140,
+                Dock = DockStyle.Fill,
                 BackColor = Color.FromArgb(40, 40, 40),
-                Margin = new Padding(5)
+                Width = 200,
+                //Margin = new Padding(5)
             };
 
             // Label pour le titre des trackbars
@@ -164,7 +184,7 @@ namespace DeepBridgeWindowsApp
                 Maximum = ddm.GetTotalSlices() - 1,
                 Value = 0,
                 Location = new Point(10, 25),
-                Width = 120
+                Width = 180
             };
             frontClipTrackBar.ValueChanged += ClipTrackBar_ValueChanged;
 
@@ -174,7 +194,7 @@ namespace DeepBridgeWindowsApp
                 Maximum = ddm.GetTotalSlices() - 1,
                 Value = 0,
                 Location = new Point(10, 65),
-                Width = 120
+                Width = 180
             };
             backClipTrackBar.ValueChanged += ClipTrackBar_ValueChanged;
 
@@ -195,20 +215,72 @@ namespace DeepBridgeWindowsApp
                 Location = new Point(10, 85)
             };
 
-            clipPanel.Controls.AddRange(new Control[] {
-        clipLabel,
-        frontClipTrackBar,
-        backClipTrackBar,
-        frontClipLabel,
-        backClipLabel
-    });
+            // Ajouter les contrôles au FlowLayoutPanel
+            checkBox = new CheckBox
+            {
+                Text = "Show Extract Position",
+                ForeColor = Color.White,
+                AutoSize = true,
+                Checked = false
+            };
+            checkBox.CheckedChanged += (s, e) => gl.Invalidate();
+
+            slicePosition = new NumericUpDown
+            {
+                Minimum = 0,                  // First pixel row
+                Maximum = sliceWidth - 1,     // Last pixel row
+                Value = sliceWidth / 2,       // Start at middle
+            };
+            slicePosition.ValueChanged += (s, e) => gl.Invalidate();
+
+            // Label to show slice position
+            var slicePositionLabel = new Label
+            {
+                Text = "Slice Position",
+                ForeColor = Color.White,
+                AutoSize = true
+            };
+
+            // Add slice button
+            sliceButton = new Button
+            {
+                Dock = DockStyle.Bottom,
+                Text = "Extract Slice",
+                AutoSize = true,
+                ForeColor = Color.White
+            };
+            sliceButton.Click += SliceButton_Click;
+
+            //clipPanel.Controls.AddRange(new Control[] {
+            //    clipLabel,
+            //    frontClipTrackBar,
+            //    backClipTrackBar,
+            //    frontClipLabel,
+            //    backClipLabel,
+            //});
+
+            // Add preview PictureBox for the slice
+            slicePreview = new PictureBox
+            {
+                SizeMode = PictureBoxSizeMode.Zoom,
+                BorderStyle = BorderStyle.FixedSingle,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Visible = false  // Hide initially
+            };
+
+            this.Controls.Add(slicePreview);
 
             // Ajouter les contrôles au FlowLayoutPanel
             flowPanel.Controls.Add(controlsLabel);
-            flowPanel.Controls.Add(clipPanel);
+            //flowPanel.Controls.Add(clipPanel);
+            //flowPanel.Controls.Add(sliceButton);
+            flowPanel.Controls.Add(checkBox);
+            flowPanel.Controls.Add(slicePositionLabel);
+            flowPanel.Controls.Add(slicePosition);
 
             // Ajouter le FlowLayoutPanel au panel gauche
             leftPanel.Controls.Add(flowPanel);
+            leftPanel.Controls.Add(sliceButton);
             this.Controls.Add(leftPanel);
         }
 
@@ -300,6 +372,107 @@ namespace DeepBridgeWindowsApp
             this.Shown += RenderDicomForm_Load;
         }
 
+        private Bitmap RotateImage(Bitmap original)
+        {
+            var rotated = new Bitmap(original.Height, original.Width);
+            using (Graphics g = Graphics.FromImage(rotated))
+            {
+                g.TranslateTransform(0, original.Width);
+                g.RotateTransform(-90);
+                g.DrawImage(original, 0, 0);
+            }
+            return rotated;
+        }
+
+        private void SaveSlice(Bitmap slice)
+        {
+            using (SaveFileDialog saveDialog = new SaveFileDialog())
+            {
+                saveDialog.Filter = "PNG Image|*.png|JPEG Image|*.jpg|Bitmap Image|*.bmp";
+                saveDialog.Title = "Save Slice Image";
+                saveDialog.DefaultExt = "png";
+
+                if (saveDialog.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        slice.Save(saveDialog.FileName);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Error saving slice: {ex.Message}");
+                    }
+                }
+            }
+        }
+
+        private async void SliceButton_Click(object sender, EventArgs e)
+        {
+            if (render != null)
+            {
+                try
+                {
+                    // Disable button while processing
+                    sliceButton.Enabled = false;
+                    sliceButton.Text = "Processing...";
+                    Cursor = Cursors.WaitCursor;
+
+                    // Convert pixel position to normalized coordinate for ExtractSlice
+                    float normalizedPos = ((float)slicePosition.Value / (sliceWidth - 1)) - 0.5f;
+
+                    Console.WriteLine($"Extracting slice at pixel row: {slicePosition.Value} (normalized: {normalizedPos})");
+                    var slice = await Task.Run(() => render.ExtractSlice(normalizedPos));
+
+                    if (slice != null)
+                    {
+                        // If there's an existing image, dispose it
+                        if (slicePreview.Image != null)
+                        {
+                            var oldImage = slicePreview.Image;
+                            slicePreview.Image = null;
+                            oldImage.Dispose();
+                        }
+
+                        var rotatedSlice = RotateImage(slice);
+                        //slice.Dispose(); // Dispose the original slice
+
+                        slicePreview.Width = rotatedSlice.Width + 10;
+                        slicePreview.Height = rotatedSlice.Height + 10;
+                        slicePreview.Location = new Point(
+                            this.ClientSize.Width - slicePreview.Width - 10,
+                            10
+                        );
+
+                        // Set the new image and show the preview
+                        slicePreview.Image = rotatedSlice;
+                        slicePreview.Visible = true;
+
+                        // Optional: Add a save button or right-click menu
+                        var saveMenu = new ContextMenuStrip();
+                        var saveItem = new ToolStripMenuItem("Save Slice...");
+                        saveItem.Click += (s, args) => SaveSlice(slice);
+                        saveMenu.Items.Add(saveItem);
+                        slicePreview.ContextMenuStrip = saveMenu;
+                    }
+                    else
+                    {
+                        MessageBox.Show("Failed to extract slice. No points found at the specified position.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error extracting slice: {ex.Message}");
+                }
+                finally
+                {
+                    // Re-enable button and restore cursor
+                    sliceButton.Enabled = true;
+                    sliceButton.Text = "Extract Slice";
+                    Cursor = Cursors.Default;
+                }
+            }
+        }
+
         private async void RenderDicomForm_Load(object sender, EventArgs e)
         {
             Console.WriteLine("Loading 3D render...");
@@ -325,7 +498,6 @@ namespace DeepBridgeWindowsApp
                         gl.Invalidate();
                         gl.Focus();
                     });
-
                     gl.Paint += GLControl_Paint;
                 });
             }
@@ -399,14 +571,14 @@ namespace DeepBridgeWindowsApp
             // Déplacement gauche/droite (Q/D)
             if (pressedKeys.Contains(Keys.Q) || pressedKeys.Contains(Keys.A))
             {
-                cameraPosition -= right * moveSpeed;
-                cameraTarget -= right * moveSpeed;
+                cameraPosition += right * moveSpeed;
+                cameraTarget += right * moveSpeed;
                 moved = true;
             }
             if (pressedKeys.Contains(Keys.D))
             {
-                cameraPosition += right * moveSpeed;
-                cameraTarget += right * moveSpeed;
+                cameraPosition -= right * moveSpeed;
+                cameraTarget -= right * moveSpeed;
                 moved = true;
             }
 
@@ -554,7 +726,10 @@ namespace DeepBridgeWindowsApp
             GL.UniformMatrix4(projLoc, false, ref projection);
 
             render.Render(shaderProgram, model, view, projection);
+            
             DrawBoundingBox(model, view, projection);
+            DrawSliceIndicator(model, view, projection);
+
             gl.SwapBuffers();
         }
 
@@ -588,6 +763,44 @@ namespace DeepBridgeWindowsApp
             GL.Vertex3(-0.5f, -0.5f, 0.5f); GL.Vertex3(-0.5f, 0.5f, 0.5f);
 
             GL.End();
+            GL.UseProgram(shaderProgram);
+        }
+
+        private void DrawSliceIndicator(Matrix4 model, Matrix4 view, Matrix4 projection)
+        {
+            if (!checkBox.Checked) return;
+
+            GL.UseProgram(ColorShaderProgram);
+
+            // Convert pixel position to normalized coordinate for rendering
+            float normalizedPos = ((float)slicePosition.Value / (sliceWidth - 1)) - 0.5f;
+
+            // Create slice position matrix
+            Matrix4 sliceModel = model * Matrix4.CreateTranslation(normalizedPos, 0, 0);
+
+            // Set uniforms
+            GL.UniformMatrix4(GL.GetUniformLocation(ColorShaderProgram, "model"), false, ref sliceModel);
+            GL.UniformMatrix4(GL.GetUniformLocation(ColorShaderProgram, "view"), false, ref view);
+            GL.UniformMatrix4(GL.GetUniformLocation(ColorShaderProgram, "projection"), false, ref projection);
+
+            // Set color to semi-transparent red
+            GL.Enable(EnableCap.Blend);
+            GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+            GL.Uniform3(GL.GetUniformLocation(ColorShaderProgram, "color"), 1.0f, 0.0f, 0.0f);
+
+            // Draw the quad
+            GL.Begin(PrimitiveType.Quads);
+            for (int i = 0; i < sliceIndicatorVertices.Length; i += 3)
+            {
+                GL.Vertex3(
+                    sliceIndicatorVertices[i],
+                    sliceIndicatorVertices[i + 1],
+                    sliceIndicatorVertices[i + 2]
+                );
+            }
+            GL.End();
+
+            GL.Disable(EnableCap.Blend);
             GL.UseProgram(shaderProgram);
         }
 

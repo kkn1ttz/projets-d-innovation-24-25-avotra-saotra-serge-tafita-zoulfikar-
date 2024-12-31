@@ -39,6 +39,11 @@ namespace DeepBridgeWindowsApp.Dicom
         private int totalSlices;
         private int currentVisibleIndices;
 
+        // Slicing
+        private readonly Dictionary<Vector3, Vector3> pointColors = new Dictionary<Vector3, Vector3>();
+        private int sliceWidth;  // Original slice width
+        private int sliceHeight; // Original slice height
+
         public Dicom3D(DicomDisplayManager ddm, Action<ProcessingProgress> progressCallback = null)
         {
             this.progressCallback = progressCallback;
@@ -58,7 +63,6 @@ namespace DeepBridgeWindowsApp.Dicom
             var firstSlice = ddm.GetCurrentSliceImage();
             float physicalWidth = firstSlice.Width * pixelSpacingX;
             float physicalHeight = firstSlice.Height * pixelSpacingY;
-            firstSlice.Dispose();
 
             // Get z-axis physical dimensions
             float firstSliceLocation = (float)ddm.GetSlice(0).SliceLocation;
@@ -71,6 +75,12 @@ namespace DeepBridgeWindowsApp.Dicom
             float scaleX = physicalWidth / maxDimension;
             float scaleY = physicalHeight / maxDimension;
             float scaleZ = totalPhysicalDepth / maxDimension;
+
+            // Store Slicing dimensions
+            sliceWidth = firstSlice.Width;
+            sliceHeight = firstSlice.Height;
+            totalSlices = ddm.GetTotalSlices();
+            firstSlice.Dispose();
 
             var completedSlices = 0;
             var progress = new ProcessingProgress
@@ -125,6 +135,13 @@ namespace DeepBridgeWindowsApp.Dicom
                                     finalZ
                                 );
 
+                                Vector3 color = new Vector3(intensity, intensity, intensity);
+
+                                lock (lockObject)
+                                {
+                                    pointColors[vertex] = color;
+                                }
+
                                 localVertices.Add(vertex);
                                 localColors.Add(new Vector3(intensity, intensity, intensity));
                                 localIndices.Add(localVertices.Count - 1);
@@ -148,6 +165,102 @@ namespace DeepBridgeWindowsApp.Dicom
                 progress.CurrentValue = completedSlices;
                 progressCallback?.Invoke(progress);
             });
+        }
+
+        public Bitmap ExtractSlice(float xPosition)
+        {
+            // Convert normalized xPosition (-0.5 to 0.5) to slice width space (0 to sliceWidth)
+            float pixelPos = (xPosition + 0.5f) * sliceWidth;
+            int nearestPixelRow = (int)Math.Round(pixelPos);
+
+            // Clamp to valid range
+            nearestPixelRow = Math.Max(0, Math.Min(nearestPixelRow, sliceWidth - 1));
+
+            Console.WriteLine($"Extracting slice at pixel row: {nearestPixelRow}");
+
+            var bitmap = new Bitmap(totalSlices, sliceHeight);
+            var bitmapData = bitmap.LockBits(
+                new Rectangle(0, 0, bitmap.Width, bitmap.Height),
+                ImageLockMode.WriteOnly,
+                System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+
+            unsafe
+            {
+                byte* ptr = (byte*)bitmapData.Scan0;
+
+                // Create a buffer to collect intensities for each position
+                var intensityBuffer = new Dictionary<(int y, int z), List<float>>();
+
+                // Collect all points that match our exact x-coordinate
+                foreach (var point in pointColors)
+                {
+                    float pointPixelX = (point.Key.X + 0.5f) * sliceWidth;
+                    int pointRow = (int)Math.Round(pointPixelX);
+
+                    if (pointRow == nearestPixelRow)
+                    {
+                        // Convert normalized coordinates to image space
+                        int y = (int)Math.Round((point.Key.Y + 0.5f) * (sliceHeight - 1));
+                        int z = (int)Math.Round((point.Key.Z + 0.5f) * (totalSlices - 1));
+
+                        if (y >= 0 && y < sliceHeight && z >= 0 && z < totalSlices)
+                        {
+                            var key = (y, z);
+                            if (!intensityBuffer.ContainsKey(key))
+                            {
+                                intensityBuffer[key] = new List<float>();
+                            }
+                            intensityBuffer[key].Add(point.Value.X);
+                        }
+                    }
+                }
+
+                // Fill the bitmap
+                for (int y = 0; y < sliceHeight; y++)
+                {
+                    for (int z = 0; z < totalSlices; z++)
+                    {
+                        int offset = y * bitmapData.Stride + z * 4;
+                        byte value = 0;
+
+                        if (intensityBuffer.TryGetValue((y, z), out var intensities))
+                        {
+                            // If we have multiple values for this position, take their average
+                            float avgIntensity = intensities.Average();
+                            value = (byte)(avgIntensity * 255);
+                        }
+
+                        ptr[offset] = value;     // B
+                        ptr[offset + 1] = value; // G
+                        ptr[offset + 2] = value; // R
+                        ptr[offset + 3] = 255;   // A
+                    }
+                }
+            }
+
+            bitmap.UnlockBits(bitmapData);
+            return bitmap;
+        }
+
+        private float FindNearestPoint((int y, int z) target, Dictionary<(int y, int z), float> points)
+        {
+            float nearestValue = 0;
+            int nearestDistance = int.MaxValue;
+
+            foreach (var point in points)
+            {
+                int dy = target.y - point.Key.y;
+                int dz = target.z - point.Key.z;
+                int distance = dy * dy + dz * dz;
+
+                if (distance < nearestDistance)
+                {
+                    nearestDistance = distance;
+                    nearestValue = point.Value;
+                }
+            }
+
+            return nearestValue;
         }
 
         public void SetClipPlanes(int front, int back)
