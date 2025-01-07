@@ -24,9 +24,12 @@ namespace DeepBridgeWindowsApp
         private TrackBar sliceTrackBar;
         private TrackBar windowWidthTrackBar;
         private TrackBar windowCenterTrackBar;
+        private DoubleTrackBar doubleTrackBar;
         private Label sliceLabel;
         private Label windowCenterLabel;
         private Label windowWidthLabel;
+        private Label minLabel;
+        private Label maxLabel;
 
         public DicomViewerForm(DicomReader reader)
         {
@@ -95,7 +98,7 @@ namespace DeepBridgeWindowsApp
                 Dock = DockStyle.Top,
                 Height = 768 / 2
             };
-            
+
             var globalViewPictureBox = new PictureBox
             {
                 Dock = DockStyle.Fill,
@@ -188,7 +191,36 @@ namespace DeepBridgeWindowsApp
                 Height = 20
             };
 
-            contentPanel.Controls.AddRange(new Control[] { mainPictureBox, sliceLabel, sliceTrackBar });
+            // Double slider min max
+            doubleTrackBar = new DoubleTrackBar
+            {
+                Dock = DockStyle.Bottom,
+                Minimum = 0,
+                Maximum = displayManager.GetTotalSlices() - 1,
+                MinValue = 0,
+                MaxValue = displayManager.GetTotalSlices() - 1,
+                TickStyle = TickStyle.TopLeft
+            };
+            doubleTrackBar.ValueChanged += DoubleTrackBar_ValueChanged;
+
+
+            minLabel = new Label
+            {
+                Dock = DockStyle.Bottom,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Height = 20,
+                Text = "Min: 0"
+            };
+
+            maxLabel = new Label
+            {
+                Dock = DockStyle.Bottom,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Height = 20,
+                Text = $"Max: {displayManager.GetTotalSlices() - 1}"
+            };
+
+            contentPanel.Controls.AddRange(new Control[] { mainPictureBox, sliceLabel, sliceTrackBar, doubleTrackBar, minLabel, maxLabel });
 
             this.Controls.AddRange(new Control[] { contentPanel, infoPanel, globalViewPanel });
             UpdateDisplay();
@@ -196,7 +228,7 @@ namespace DeepBridgeWindowsApp
 
         private void Button_Click(object sender, EventArgs e)
         {
-            var renderForm = new RenderDicomForm(displayManager);
+            var renderForm = new RenderDicomForm(displayManager, doubleTrackBar.MinValue, doubleTrackBar.MaxValue);
             renderForm.Show();
         }
 
@@ -234,6 +266,14 @@ namespace DeepBridgeWindowsApp
             sliceLabel.Text = $"Slice {displayManager.GetCurrentSliceIndex() + 1} of {displayManager.GetTotalSlices()}";
             windowCenterLabel.Text = "Window Center: " + windowCenterTrackBar.Value;
             windowWidthLabel.Text = "Window Width: " + windowWidthTrackBar.Value;
+        }
+
+
+        private void DoubleTrackBar_ValueChanged(object sender, EventArgs e)
+        {
+            minLabel.Text = "Min: " + doubleTrackBar.MinValue;
+            maxLabel.Text = "Max: " + doubleTrackBar.MaxValue;
+            UpdateDisplay();
         }
     }
 }

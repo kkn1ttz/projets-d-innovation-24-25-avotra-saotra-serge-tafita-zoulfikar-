@@ -14,6 +14,10 @@ namespace DeepBridgeWindowsApp
 {
     public partial class RenderDicomForm : Form
     {
+        //Min and Max values from the trackbars
+        private int minSlice;
+        private int maxSlice;
+
         // Composants principaux
         private Dicom3D render;
         private readonly DicomMetadata dicom;
@@ -106,9 +110,11 @@ namespace DeepBridgeWindowsApp
             FragColor = vec4(color, 1.0);
         }";
 
-        public RenderDicomForm(DicomDisplayManager ddm)
+        public RenderDicomForm(DicomDisplayManager ddm, int minSlice, int maxSlice)
         {
             this.ddm = ddm;
+            this.minSlice = minSlice;
+            this.maxSlice = maxSlice;
             this.dicom = this.ddm.globalView;
             this.sliceWidth = ddm.GetSlice(0).Columns;
             InitializeComponents();
@@ -488,7 +494,7 @@ namespace DeepBridgeWindowsApp
                         gl.Focus();
                     });
 
-                    this.render = new Dicom3D(this.ddm, UpdateProgress);
+                    this.render = new Dicom3D(this.ddm, minSlice, maxSlice, UpdateProgress);
 
                     this.Invoke((MethodInvoker)delegate
                     {
