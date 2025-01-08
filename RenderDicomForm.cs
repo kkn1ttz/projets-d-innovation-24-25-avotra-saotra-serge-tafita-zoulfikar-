@@ -56,6 +56,9 @@ namespace DeepBridgeWindowsApp
         private NumericUpDown angleYZInput;
         private NumericUpDown angleXYInput;
 
+        // Debug
+        private Label debugLabel;
+
         // Slice indicator
         private int[] sliceIndicatorVBO;
         private readonly float[] sliceIndicatorVertices = {
@@ -344,6 +347,21 @@ namespace DeepBridgeWindowsApp
             // Ajouter le FlowLayoutPanel au panel gauche
             leftPanel.Controls.Add(flowPanel);
             leftPanel.Controls.Add(sliceButton);
+
+            debugLabel = new Label
+            {
+                AutoSize = true,
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+                ForeColor = Color.White,
+                BackColor = Color.Black,
+                Location = new Point(this.ClientSize.Width - 100, this.ClientSize.Height - 20) // Adjust the location to stick to the bottom right
+            };
+            this.Controls.Add(debugLabel);
+            this.Resize += (s, e) =>
+            {
+                debugLabel.Location = new Point(this.ClientSize.Width - debugLabel.Width - 10, this.ClientSize.Height - debugLabel.Height - 10);
+            };
+
             this.Controls.Add(leftPanel);
         }
 
@@ -774,6 +792,13 @@ namespace DeepBridgeWindowsApp
 
             cameraPosition = Vector3.Transform(cameraPosition - cameraTarget, finalRotation) + cameraTarget;
             cameraUp = Vector3.Transform(cameraUp, finalRotation);
+
+            // Debug angles
+            viewDir = (cameraTarget - cameraPosition).Normalized();
+            float angleX = MathHelper.RadiansToDegrees((float)Math.Atan2(viewDir.Y, Math.Sqrt(viewDir.X * viewDir.X + viewDir.Z * viewDir.Z)));
+            float angleY = MathHelper.RadiansToDegrees((float)Math.Atan2(viewDir.X, viewDir.Z));
+            float angleZ = MathHelper.RadiansToDegrees((float)Math.Atan2(cameraUp.X, cameraUp.Y));
+            debugLabel.Text = $"X (Pitch): {angleX:F2}° | Y (Yaw): {angleY:F2}° | Z (Roll): {angleZ:F2}°";
 
             lastMousePos = e.Location;
             gl.Invalidate();
