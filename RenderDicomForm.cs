@@ -50,8 +50,11 @@ namespace DeepBridgeWindowsApp
         // Slice Button
         private Button sliceButton;
         private PictureBox slicePreview;
-        private NumericUpDown slicePosition;
+        private NumericUpDown slicePositionX;
+        private NumericUpDown slicePositionZ;
         private CheckBox checkBox;
+        private NumericUpDown angleYZInput;
+        private NumericUpDown angleXYInput;
 
         // Slice indicator
         private int[] sliceIndicatorVBO;
@@ -103,7 +106,7 @@ namespace DeepBridgeWindowsApp
         uniform vec3 color;
         out vec4 FragColor;
         void main() {
-            FragColor = vec4(color, 1.0);
+            FragColor = vec4(color, 0.5);
         }";
 
         public RenderDicomForm(DicomDisplayManager ddm)
@@ -225,21 +228,37 @@ namespace DeepBridgeWindowsApp
             };
             checkBox.CheckedChanged += (s, e) => gl.Invalidate();
 
-            slicePosition = new NumericUpDown
+            slicePositionX = new NumericUpDown
             {
                 Minimum = 0,                  // First pixel row
                 Maximum = sliceWidth - 1,     // Last pixel row
                 Value = sliceWidth / 2,       // Start at middle
             };
-            slicePosition.ValueChanged += (s, e) => gl.Invalidate();
+            slicePositionX.ValueChanged += (s, e) => gl.Invalidate();
 
             // Label to show slice position
-            var slicePositionLabel = new Label
+            var slicePositionXLabel = new Label
             {
-                Text = "Slice Position",
+                Text = "X Position",
                 ForeColor = Color.White,
                 AutoSize = true
             };
+
+            var slicePositionZLabel = new Label
+            {
+                Text = "Z Position",
+                ForeColor = Color.White,
+                AutoSize = true
+            };
+
+            slicePositionZ = new NumericUpDown
+            {
+                Minimum = 0,
+                Maximum = ddm.GetTotalSlices() - 1,
+                Value = ddm.GetTotalSlices() / 2,
+                Width = 80
+            };
+            slicePositionZ.ValueChanged += (s, e) => gl.Invalidate();
 
             // Add slice button
             sliceButton = new Button
@@ -268,16 +287,60 @@ namespace DeepBridgeWindowsApp
                 Visible = false  // Hide initially
             };
 
+            // YZ rotation (around X axis)
+            var angleYZLabel = new Label
+            {
+                Text = "YZ Rotation (degrees)",
+                ForeColor = Color.White,
+                AutoSize = true
+            };
+
+            angleYZInput = new NumericUpDown
+            {
+                Minimum = -180,
+                Maximum = 180,
+                Value = 90,
+                DecimalPlaces = 1,
+                Increment = 1m
+            };
+            angleYZInput.ValueChanged += (s, e) => gl.Invalidate();
+
+            // XY rotation (around Z axis)
+            var angleXYLabel = new Label
+            {
+                Text = "XY Rotation (degrees)",
+                ForeColor = Color.White,
+                AutoSize = true
+            };
+
+            angleXYInput = new NumericUpDown  // Renamed from angleXZInput
+            {
+                Minimum = -180,
+                Maximum = 180,
+                Value = 0,
+                DecimalPlaces = 1,
+                Increment = 1m
+            };
+            angleXYInput.ValueChanged += (s, e) => gl.Invalidate();
+
             this.Controls.Add(slicePreview);
 
             // Ajouter les contrôles au FlowLayoutPanel
             flowPanel.Controls.Add(controlsLabel);
+
             //flowPanel.Controls.Add(clipPanel);
             //flowPanel.Controls.Add(sliceButton);
             flowPanel.Controls.Add(checkBox);
-            flowPanel.Controls.Add(slicePositionLabel);
-            flowPanel.Controls.Add(slicePosition);
+            flowPanel.Controls.Add(slicePositionXLabel);
+            flowPanel.Controls.Add(slicePositionX);
+            flowPanel.Controls.Add(slicePositionZLabel);
+            flowPanel.Controls.Add(slicePositionZ);
 
+            flowPanel.Controls.Add(angleYZLabel);
+            flowPanel.Controls.Add(angleYZInput);
+            flowPanel.Controls.Add(angleXYLabel);
+            flowPanel.Controls.Add(angleXYInput);
+            
             // Ajouter le FlowLayoutPanel au panel gauche
             leftPanel.Controls.Add(flowPanel);
             leftPanel.Controls.Add(sliceButton);
@@ -417,11 +480,13 @@ namespace DeepBridgeWindowsApp
                     sliceButton.Text = "Processing...";
                     Cursor = Cursors.WaitCursor;
 
-                    // Convert pixel position to normalized coordinate for ExtractSlice
-                    float normalizedPos = ((float)slicePosition.Value / (sliceWidth - 1)) - 0.5f;
+                    float normalizedX = ((float)slicePositionX.Value / (sliceWidth - 1)) - 0.5f;
+                    float normalizedZ = ((float)slicePositionZ.Value / (ddm.GetTotalSlices() - 1)) - 0.5f;
+                    float angleYZ = (float)((double)angleYZInput.Value * Math.PI / 180.0);
+                    float angleXY = (float)((double)angleXYInput.Value * Math.PI / 180.0);
 
-                    Console.WriteLine($"Extracting slice at pixel row: {slicePosition.Value} (normalized: {normalizedPos})");
-                    var slice = await Task.Run(() => render.ExtractSlice(normalizedPos));
+                    Console.WriteLine($"Extracting slice at X: {slicePositionX.Value}, Z: {slicePositionZ.Value}, Angle YZ: {angleYZInput.Value}, Angle XY: {angleXYInput.Value}");
+                    var slice = await Task.Run(() => render.ExtractSlice(normalizedX, normalizedZ, angleYZ, angleXY));
 
                     if (slice != null)
                     {
@@ -446,6 +511,61 @@ namespace DeepBridgeWindowsApp
                         // Set the new image and show the preview
                         slicePreview.Image = rotatedSlice;
                         slicePreview.Visible = true;
+
+                        // Add resolution label
+                        var resolutionLabel = new Label
+                        {
+                            Text = $"Resolution: {rotatedSlice.Width} x {rotatedSlice.Height}",
+                            AutoSize = true,
+                            BackColor = Color.FromArgb(200, 0, 0, 0),
+                            ForeColor = Color.White,
+                            Padding = new Padding(5),
+                        };
+
+                        // Calculate preview size based on image dimensions
+                        const int MIN_PREVIEW_SIZE = 300; // Minimum preview size
+                        float scale = 1.0f;
+                        int previewWidth = rotatedSlice.Width;
+                        int previewHeight = rotatedSlice.Height;
+
+                        // If either dimension is too small, scale up the image
+                        const float MIN_HEIGHT = 100f; // Minimum height to ensure visibility
+                        if (rotatedSlice.Height < MIN_HEIGHT || rotatedSlice.Width < MIN_PREVIEW_SIZE)
+                        {
+                            // Calculate scale factors for both width and height constraints
+                            float scaleWidth = MIN_PREVIEW_SIZE / (float)rotatedSlice.Width;
+                            float scaleHeight = MIN_HEIGHT / (float)rotatedSlice.Height;
+                            // Use the larger scale factor to ensure both minimums are met
+                            scale = Math.Max(scaleWidth, scaleHeight);
+                            previewWidth = (int)(rotatedSlice.Width * scale);
+                            previewHeight = (int)(rotatedSlice.Height * scale);
+                        }
+
+                        slicePreview.Width = previewWidth + 10;
+                        slicePreview.Height = previewHeight + 30; // Extra space for resolution label
+                        slicePreview.Location = new Point(
+                            this.ClientSize.Width - slicePreview.Width - 10,
+                            10
+                        );
+
+                        // Position resolution label at bottom of preview
+                        resolutionLabel.Location = new Point(
+                            slicePreview.Left + 5,
+                            slicePreview.Bottom - resolutionLabel.Height - 5
+                        );
+
+                        // Remove existing resolution label if it exists
+                        var existingLabel = this.Controls.OfType<Label>()
+                            .FirstOrDefault(l => l.Tag?.ToString() == "ResolutionLabel");
+                        if (existingLabel != null)
+                        {
+                            this.Controls.Remove(existingLabel);
+                            existingLabel.Dispose();
+                        }
+
+                        resolutionLabel.Tag = "ResolutionLabel";
+                        this.Controls.Add(resolutionLabel);
+                        resolutionLabel.BringToFront();
 
                         // Optional: Add a save button or right-click menu
                         var saveMenu = new ContextMenuStrip();
@@ -772,11 +892,23 @@ namespace DeepBridgeWindowsApp
 
             GL.UseProgram(ColorShaderProgram);
 
-            // Convert pixel position to normalized coordinate for rendering
-            float normalizedPos = ((float)slicePosition.Value / (sliceWidth - 1)) - 0.5f;
+            // Get normalized positions
+            float normalizedX = ((float)slicePositionX.Value / (sliceWidth - 1)) - 0.5f;
+            float normalizedZ = ((float)slicePositionZ.Value / (ddm.GetTotalSlices() - 1)) - 0.5f;
 
-            // Create slice position matrix
-            Matrix4 sliceModel = model * Matrix4.CreateTranslation(normalizedPos, 0, 0);
+            float angleYZ = (float)((double)angleYZInput.Value * Math.PI / 180.0);
+            float angleXY = (float)((double)angleXYInput.Value * Math.PI / 180.0);
+
+            // Create rotations
+            Quaternion rotationZ = Quaternion.FromAxisAngle(Vector3.UnitZ, angleXY);
+            Quaternion rotationY = Quaternion.FromAxisAngle(Vector3.UnitY, angleYZ);
+            Quaternion combinedRotation = rotationY * rotationZ;
+
+            // Create matrices
+            Matrix4 rotationMatrix = Matrix4.CreateFromQuaternion(combinedRotation);
+
+            // Apply model transformation first, then rotation, then translation
+            Matrix4 sliceModel = model * rotationMatrix * Matrix4.CreateTranslation(normalizedX, 0, normalizedZ);
 
             // Set uniforms
             GL.UniformMatrix4(GL.GetUniformLocation(ColorShaderProgram, "model"), false, ref sliceModel);
@@ -788,7 +920,7 @@ namespace DeepBridgeWindowsApp
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
             GL.Uniform3(GL.GetUniformLocation(ColorShaderProgram, "color"), 1.0f, 0.0f, 0.0f);
 
-            // Draw the quad
+            // Draw the slice plane
             GL.Begin(PrimitiveType.Quads);
             for (int i = 0; i < sliceIndicatorVertices.Length; i += 3)
             {
@@ -799,6 +931,29 @@ namespace DeepBridgeWindowsApp
                 );
             }
             GL.End();
+
+            // Draw coordinate axes
+            float axisLength = 0.2f;
+            GL.LineWidth(2.0f);
+            GL.Begin(PrimitiveType.Lines);
+
+            // Normal vector - Red
+            GL.Uniform3(GL.GetUniformLocation(ColorShaderProgram, "color"), 1.0f, 0.0f, 0.0f);
+            GL.Vertex3(0, 0, 0);
+            GL.Vertex3(axisLength, 0, 0);
+
+            // Y axis - Green
+            GL.Uniform3(GL.GetUniformLocation(ColorShaderProgram, "color"), 0.0f, 1.0f, 0.0f);
+            GL.Vertex3(0, 0, 0);
+            GL.Vertex3(0, axisLength, 0);
+
+            // Z axis - Blue
+            GL.Uniform3(GL.GetUniformLocation(ColorShaderProgram, "color"), 0.0f, 0.0f, 1.0f);
+            GL.Vertex3(0, 0, 0);
+            GL.Vertex3(0, 0, axisLength);
+
+            GL.End();
+            GL.LineWidth(1.0f);
 
             GL.Disable(EnableCap.Blend);
             GL.UseProgram(shaderProgram);

@@ -15,6 +15,23 @@ using OpenTK.Mathematics;
 
 namespace DeepBridgeWindowsApp.Dicom
 {
+    public class SlicePlane
+    {
+        public Vector3 Normal { get; private set; }
+        public Vector3 Point { get; private set; }
+
+        public SlicePlane(Vector3 normal, float xPosition)
+        {
+            Normal = normal.Normalized();
+            Point = new Vector3(xPosition, 0, 0);
+        }
+
+        public float GetSignedDistance(Vector3 point)
+        {
+            return Vector3.Dot(Normal, point - Point);
+        }
+    }
+
     public class ProcessingProgress
     {
         public string CurrentStep { get; set; }
@@ -167,16 +184,94 @@ namespace DeepBridgeWindowsApp.Dicom
             });
         }
 
-        public Bitmap ExtractSlice(float xPosition)
+        //public Bitmap ExtractSlice(float xPosition)
+        //{
+        //    // Convert normalized xPosition (-0.5 to 0.5) to slice width space (0 to sliceWidth)
+        //    float pixelPos = (xPosition + 0.5f) * sliceWidth;
+        //    int nearestPixelRow = (int)Math.Round(pixelPos);
+
+        //    // Clamp to valid range
+        //    nearestPixelRow = Math.Max(0, Math.Min(nearestPixelRow, sliceWidth - 1));
+
+        //    Console.WriteLine($"Extracting slice at pixel row: {nearestPixelRow}");
+
+        //    var bitmap = new Bitmap(totalSlices, sliceHeight);
+        //    var bitmapData = bitmap.LockBits(
+        //        new Rectangle(0, 0, bitmap.Width, bitmap.Height),
+        //        ImageLockMode.WriteOnly,
+        //        System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+
+        //    unsafe
+        //    {
+        //        byte* ptr = (byte*)bitmapData.Scan0;
+
+        //        // Create a buffer to collect intensities for each position
+        //        var intensityBuffer = new Dictionary<(int y, int z), List<float>>();
+
+        //        // Collect all points that match our exact x-coordinate
+        //        foreach (var point in pointColors)
+        //        {
+        //            float pointPixelX = (point.Key.X + 0.5f) * sliceWidth;
+        //            int pointRow = (int)Math.Round(pointPixelX);
+
+        //            if (pointRow == nearestPixelRow)
+        //            {
+        //                // Convert normalized coordinates to image space
+        //                int y = (int)Math.Round((point.Key.Y + 0.5f) * (sliceHeight - 1));
+        //                int z = (int)Math.Round((point.Key.Z + 0.5f) * (totalSlices - 1));
+
+        //                if (y >= 0 && y < sliceHeight && z >= 0 && z < totalSlices)
+        //                {
+        //                    var key = (y, z);
+        //                    if (!intensityBuffer.ContainsKey(key))
+        //                    {
+        //                        intensityBuffer[key] = new List<float>();
+        //                    }
+        //                    intensityBuffer[key].Add(point.Value.X);
+        //                }
+        //            }
+        //        }
+
+        //        // Fill the bitmap
+        //        for (int y = 0; y < sliceHeight; y++)
+        //        {
+        //            for (int z = 0; z < totalSlices; z++)
+        //            {
+        //                int offset = y * bitmapData.Stride + z * 4;
+        //                byte value = 0;
+
+        //                if (intensityBuffer.TryGetValue((y, z), out var intensities))
+        //                {
+        //                    // If we have multiple values for this position, take their average
+        //                    float avgIntensity = intensities.Average();
+        //                    value = (byte)(avgIntensity * 255);
+        //                }
+
+        //                ptr[offset] = value;     // B
+        //                ptr[offset + 1] = value; // G
+        //                ptr[offset + 2] = value; // R
+        //                ptr[offset + 3] = 255;   // A
+        //            }
+        //        }
+        //    }
+
+        //    bitmap.UnlockBits(bitmapData);
+        //    return bitmap;
+        //}
+
+        public Bitmap ExtractSlice(float xPosition, float zPosition, float angleYZ = 0, float angleXY = 0)
         {
-            // Convert normalized xPosition (-0.5 to 0.5) to slice width space (0 to sliceWidth)
-            float pixelPos = (xPosition + 0.5f) * sliceWidth;
-            int nearestPixelRow = (int)Math.Round(pixelPos);
+            // Convert normalized positions (-0.5 to 0.5)
+            Vector3 positionVector = new Vector3(xPosition, 0, zPosition);
 
-            // Clamp to valid range
-            nearestPixelRow = Math.Max(0, Math.Min(nearestPixelRow, sliceWidth - 1));
+            // Create rotation quaternions
+            Quaternion rotationZ = Quaternion.FromAxisAngle(Vector3.UnitZ, angleXY);
+            Quaternion rotationY = Quaternion.FromAxisAngle(Vector3.UnitY, angleYZ);
+            Quaternion rotation = rotationY * rotationZ;
 
-            Console.WriteLine($"Extracting slice at pixel row: {nearestPixelRow}");
+            // Get the normal vector
+            Vector3 normal = Vector3.Transform(Vector3.UnitX, rotation);
+            normal = Vector3.Normalize(normal);
 
             var bitmap = new Bitmap(totalSlices, sliceHeight);
             var bitmapData = bitmap.LockBits(
@@ -184,28 +279,38 @@ namespace DeepBridgeWindowsApp.Dicom
                 ImageLockMode.WriteOnly,
                 System.Drawing.Imaging.PixelFormat.Format32bppArgb);
 
+            const float THICKNESS_THRESHOLD = 0.005f;
+
             unsafe
             {
                 byte* ptr = (byte*)bitmapData.Scan0;
-
-                // Create a buffer to collect intensities for each position
                 var intensityBuffer = new Dictionary<(int y, int z), List<float>>();
 
-                // Collect all points that match our exact x-coordinate
                 foreach (var point in pointColors)
                 {
-                    float pointPixelX = (point.Key.X + 0.5f) * sliceWidth;
-                    int pointRow = (int)Math.Round(pointPixelX);
+                    Vector3 pointVector = point.Key - positionVector;
+                    float distance = Math.Abs(Vector3.Dot(pointVector, normal));
 
-                    if (pointRow == nearestPixelRow)
+                    if (distance <= THICKNESS_THRESHOLD)
                     {
-                        // Convert normalized coordinates to image space
-                        int y = (int)Math.Round((point.Key.Y + 0.5f) * (sliceHeight - 1));
-                        int z = (int)Math.Round((point.Key.Z + 0.5f) * (totalSlices - 1));
+                        // Project point onto slice plane
+                        Vector3 projected = point.Key - normal * Vector3.Dot(point.Key - positionVector, normal);
 
-                        if (y >= 0 && y < sliceHeight && z >= 0 && z < totalSlices)
+                        // Get rotated basis vectors
+                        Vector3 upVector = Vector3.Transform(Vector3.UnitY, rotation);
+                        Vector3 rightVector = Vector3.Transform(Vector3.UnitZ, rotation);
+
+                        // Calculate 2D coordinates
+                        float y = Vector3.Dot(projected - positionVector, upVector);
+                        float z = Vector3.Dot(projected - positionVector, rightVector);
+
+                        // Convert to image coordinates
+                        int imageY = (int)Math.Round((y + 0.5f) * (sliceHeight - 1));
+                        int imageZ = (int)Math.Round((z + 0.5f) * (totalSlices - 1));
+
+                        if (imageY >= 0 && imageY < sliceHeight && imageZ >= 0 && imageZ < totalSlices)
                         {
-                            var key = (y, z);
+                            var key = (imageY, imageZ);
                             if (!intensityBuffer.ContainsKey(key))
                             {
                                 intensityBuffer[key] = new List<float>();
@@ -215,7 +320,7 @@ namespace DeepBridgeWindowsApp.Dicom
                     }
                 }
 
-                // Fill the bitmap
+                // Fill the bitmap (same as before)
                 for (int y = 0; y < sliceHeight; y++)
                 {
                     for (int z = 0; z < totalSlices; z++)
@@ -225,7 +330,6 @@ namespace DeepBridgeWindowsApp.Dicom
 
                         if (intensityBuffer.TryGetValue((y, z), out var intensities))
                         {
-                            // If we have multiple values for this position, take their average
                             float avgIntensity = intensities.Average();
                             value = (byte)(avgIntensity * 255);
                         }
@@ -341,6 +445,7 @@ namespace DeepBridgeWindowsApp.Dicom
             if (elementBufferObject != null)
                 GL.DeleteBuffer(elementBufferObject[0]);
             GL.DeleteVertexArray(vertexArrayObject);
+            pointColors.Clear();
         }
     }
 }
