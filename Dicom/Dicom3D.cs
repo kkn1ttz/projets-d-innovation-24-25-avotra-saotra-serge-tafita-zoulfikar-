@@ -362,11 +362,16 @@ namespace DeepBridgeWindowsApp.Dicom
             Quaternion rotationY = Quaternion.FromAxisAngle(Vector3.UnitY, angleYZ);
             Quaternion rotation = rotationY * rotationZ;
 
-            // Get the normal vector
+            // Get the normal vector for our slice plane
             Vector3 normal = Vector3.Transform(Vector3.UnitX, rotation);
             normal = Vector3.Normalize(normal);
 
-            var bitmap = new Bitmap(totalSlices, sliceHeight);
+            // Get rotated basis vectors for our 2D slice space
+            Vector3 upVector = Vector3.Transform(Vector3.UnitY, rotation);
+            Vector3 rightVector = Vector3.Transform(Vector3.UnitZ, rotation);
+
+            // Create a bitmap using the original pixel dimensions
+            var bitmap = new Bitmap(sliceWidth, sliceHeight);
             var bitmapData = bitmap.LockBits(
                 new Rectangle(0, 0, bitmap.Width, bitmap.Height),
                 ImageLockMode.WriteOnly,
@@ -377,53 +382,49 @@ namespace DeepBridgeWindowsApp.Dicom
             unsafe
             {
                 byte* ptr = (byte*)bitmapData.Scan0;
-                var intensityBuffer = new Dictionary<(int y, int z), List<float>>();
+                // Use a 2D array for direct pixel access
+                var intensityArray = new float[sliceHeight, sliceWidth];
+                var countArray = new int[sliceHeight, sliceWidth];
 
-                foreach (var point in pointColors)
+                // Project points onto the bitmap
+                foreach (var kvp in pointColors)
                 {
-                    Vector3 pointVector = point.Key - positionVector;
+                    Vector3 pointVector = kvp.Key - positionVector;
                     float distance = Math.Abs(Vector3.Dot(pointVector, normal));
 
                     if (distance <= THICKNESS_THRESHOLD)
                     {
                         // Project point onto slice plane
-                        Vector3 projected = point.Key - normal * Vector3.Dot(point.Key - positionVector, normal);
+                        Vector3 projected = kvp.Key - normal * Vector3.Dot(kvp.Key - positionVector, normal);
 
-                        // Get rotated basis vectors
-                        Vector3 upVector = Vector3.Transform(Vector3.UnitY, rotation);
-                        Vector3 rightVector = Vector3.Transform(Vector3.UnitZ, rotation);
-
-                        // Calculate 2D coordinates
+                        // Get coordinates in rotated space relative to original pixel grid
                         float y = Vector3.Dot(projected - positionVector, upVector);
                         float z = Vector3.Dot(projected - positionVector, rightVector);
 
-                        // Convert to image coordinates
+                        // Convert to pixel coordinates maintaining original grid
                         int imageY = (int)Math.Round((y + 0.5f) * (sliceHeight - 1));
-                        int imageZ = (int)Math.Round((z + 0.5f) * (totalSlices - 1));
+                        int imageX = (int)Math.Round((z + 0.5f) * (sliceWidth - 1));
 
-                        if (imageY >= 0 && imageY < sliceHeight && imageZ >= 0 && imageZ < totalSlices)
+                        // Ensure coordinates are within bounds
+                        if (imageY >= 0 && imageY < sliceHeight && imageX >= 0 && imageX < sliceWidth)
                         {
-                            var key = (imageY, imageZ);
-                            if (!intensityBuffer.ContainsKey(key))
-                            {
-                                intensityBuffer[key] = new List<float>();
-                            }
-                            intensityBuffer[key].Add(point.Value.X);
+                            intensityArray[imageY, imageX] += kvp.Value.X;
+                            countArray[imageY, imageX]++;
                         }
                     }
                 }
 
-                // Fill the bitmap (same as before)
+                // Fill the bitmap using the accumulated values
                 for (int y = 0; y < sliceHeight; y++)
                 {
-                    for (int z = 0; z < totalSlices; z++)
+                    for (int x = 0; x < sliceWidth; x++)
                     {
-                        int offset = y * bitmapData.Stride + z * 4;
+                        int offset = y * bitmapData.Stride + x * 4;
                         byte value = 0;
 
-                        if (intensityBuffer.TryGetValue((y, z), out var intensities))
+                        if (countArray[y, x] > 0)
                         {
-                            float avgIntensity = intensities.Average();
+                            float avgIntensity = intensityArray[y, x] / countArray[y, x];
                             value = (byte)(avgIntensity * 255);
                         }
 
