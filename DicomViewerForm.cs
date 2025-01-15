@@ -268,6 +268,12 @@ namespace DeepBridgeWindowsApp
             windowWidthLabel.Text = "Window Width: " + windowWidthTrackBar.Value;
         }
 
+        private void DoubleTrackBar_MouseUp(object sender, MouseEventArgs e)
+        {
+            minLabel.Text = "Min: " + doubleTrackBar.MinValue;
+            maxLabel.Text = "Max: " + doubleTrackBar.MaxValue;
+            UpdateDisplay();
+        }
 
         private void DoubleTrackBar_ValueChanged(object sender, EventArgs e)
         {
