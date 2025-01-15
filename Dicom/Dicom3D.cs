@@ -44,15 +44,15 @@ namespace DeepBridgeWindowsApp.Dicom
         private int sliceWidth;  // Original slice width
         private int sliceHeight; // Original slice height
 
-        public Dicom3D(DicomDisplayManager ddm, Action<ProcessingProgress> progressCallback = null)
+        public Dicom3D(DicomDisplayManager ddm, int minSlice, int maxSlice, Action<ProcessingProgress> progressCallback = null)
         {
             this.progressCallback = progressCallback;
             this.totalSlices = ddm.GetTotalSlices();
-            ProcessSlices(ddm);
+            ProcessSlices(ddm, minSlice, maxSlice);
             currentVisibleIndices = indices.Count;
         }
 
-        private void ProcessSlices(DicomDisplayManager ddm)
+        private void ProcessSlices(DicomDisplayManager ddm, int minSlice, int maxSlice)
         {
             // Get pixel spacing (in mm)
             var pixelSpacing = ddm.GetSlice(0).PixelSpacing;
@@ -79,18 +79,18 @@ namespace DeepBridgeWindowsApp.Dicom
             // Store Slicing dimensions
             sliceWidth = firstSlice.Width;
             sliceHeight = firstSlice.Height;
-            totalSlices = ddm.GetTotalSlices();
+            totalSlices = maxSlice - minSlice;
             firstSlice.Dispose();
 
             var completedSlices = 0;
             var progress = new ProcessingProgress
             {
-                TotalValue = ddm.GetTotalSlices(),
+                TotalValue = maxSlice - minSlice,
                 CurrentValue = 0,
                 CurrentStep = "Processing DICOM slices"
             };
 
-            Parallel.For(0, ddm.GetTotalSlices(), new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, z =>
+            Parallel.For(minSlice, maxSlice , new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, z =>
             {
                 var localVertices = new List<Vector3>();
                 var localColors = new List<Vector3>();
