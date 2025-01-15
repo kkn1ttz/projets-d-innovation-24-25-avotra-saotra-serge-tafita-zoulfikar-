@@ -205,53 +205,63 @@ namespace DeepBridgeWindowsApp.Dicom
                 float normalizedZ = ((currentSliceLocation - firstSliceLocation) / totalPhysicalDepth) - 0.5f;
                 float finalZ = normalizedZ * scaleZ;
 
-                BitmapData bitmapData = slice.LockBits(
-                    new Rectangle(0, 0, slice.Width, slice.Height),
-                    ImageLockMode.ReadOnly,
-                    System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-
-                unsafe
+                BitmapData bitmapData = null;
+                try
                 {
-                    byte* ptr = (byte*)bitmapData.Scan0;
+                    bitmapData = slice.LockBits(
+                        new Rectangle(0, 0, slice.Width, slice.Height),
+                        ImageLockMode.ReadOnly,
+                        System.Drawing.Imaging.PixelFormat.Format32bppArgb);
 
-                    for (int y = 0; y < slice.Height; y++)
+                    unsafe
                     {
-                        for (int x = 0; x < slice.Width; x++)
+                        byte* ptr = (byte*)bitmapData.Scan0;
+
+                        for (int y = 0; y < slice.Height; y++)
                         {
-                            int offset = y * bitmapData.Stride + x * 4;
-                            byte b = ptr[offset];
-                            byte g = ptr[offset + 1];
-                            byte r = ptr[offset + 2];
-
-                            float intensity = (r * 0.299f + g * 0.587f + b * 0.114f) / 255f;
-
-                            if (intensity > 0.15f)
+                            for (int x = 0; x < slice.Width; x++)
                             {
-                                float physicalX = (x * pixelSpacingX);
-                                float physicalY = (y * pixelSpacingY);
+                                int offset = y * bitmapData.Stride + x * 4;
+                                byte b = ptr[offset];
+                                byte g = ptr[offset + 1];
+                                byte r = ptr[offset + 2];
 
-                                Vector3 vertex = new Vector3(
-                                    ((physicalX / physicalWidth) - 0.5f) * scaleX,
-                                    ((physicalY / physicalHeight) - 0.5f) * scaleY,
-                                    finalZ
-                                );
+                                float intensity = (r * 0.299f + g * 0.587f + b * 0.114f) / 255f;
 
-                                Vector3 color = new Vector3(intensity, intensity, intensity);
-
-                                lock (lockObject)
+                                if (intensity > 0.15f)
                                 {
-                                    pointColors[vertex] = color;
-                                }
+                                    float physicalX = (x * pixelSpacingX);
+                                    float physicalY = (y * pixelSpacingY);
 
-                                localVertices.Add(vertex);
-                                localColors.Add(new Vector3(intensity, intensity, intensity));
-                                localIndices.Add(localVertices.Count - 1);
+                                    Vector3 vertex = new Vector3(
+                                        ((physicalX / physicalWidth) - 0.5f) * scaleX,
+                                        ((physicalY / physicalHeight) - 0.5f) * scaleY,
+                                        finalZ
+                                    );
+
+                                    Vector3 color = new Vector3(intensity, intensity, intensity);
+
+                                    lock (lockObject)
+                                    {
+                                        pointColors[vertex] = color;
+                                    }
+
+                                    localVertices.Add(vertex);
+                                    localColors.Add(new Vector3(intensity, intensity, intensity));
+                                    localIndices.Add(localVertices.Count - 1);
+                                }
                             }
                         }
                     }
                 }
-
-                slice.UnlockBits(bitmapData);
+                finally
+                {
+                    if (bitmapData != null)
+                    {
+                        slice.UnlockBits(bitmapData);
+                    }
+                    slice.Dispose();
+                }
 
                 lock (lockObject)
                 {
@@ -260,8 +270,7 @@ namespace DeepBridgeWindowsApp.Dicom
                     colors.AddRange(localColors);
                     indices.AddRange(localIndices.Select(i => i + baseIndex));
                 }
-
-                slice.Dispose();
+                
                 Interlocked.Increment(ref completedSlices);
                 progress.CurrentValue = completedSlices;
                 progressCallback?.Invoke(progress);

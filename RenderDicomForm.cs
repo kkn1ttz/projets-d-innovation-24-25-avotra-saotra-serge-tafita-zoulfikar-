@@ -687,11 +687,30 @@ namespace DeepBridgeWindowsApp
 
         private void UpdateProgress(ProcessingProgress progress)
         {
-            this.Invoke((MethodInvoker)delegate
+            try
             {
-                progressBar.Value = (int)progress.Percentage;
-                progressLabel.Text = $"{progress.CurrentStep} - {progress.CurrentValue} of {progress.TotalValue} slices ({progress.Percentage:F1}%)";
-            });
+                if (!IsDisposed && !Disposing)
+                {
+                    this.Invoke((MethodInvoker)delegate
+                    {
+                        if (!IsDisposed && !Disposing)
+                        {
+                            progressBar.Value = (int)progress.Percentage;
+                            progressLabel.Text = $"{progress.CurrentStep} - {progress.CurrentValue} of {progress.TotalValue} slices ({progress.Percentage:F1}%)";
+                        }
+                    });
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+                // Ignore - form is being disposed
+                Debug.WriteLine("Form disposed during progress update");
+            }
+            catch (InvalidOperationException)
+            {
+                // Ignore - form is being disposed
+                Debug.WriteLine("Form disposed during progress update");
+            }
         }
 
         #region Keyboard Controls
