@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Linq;
@@ -40,8 +41,9 @@ namespace DeepBridgeWindowsApp.Dicom
         public float Percentage => (float)CurrentValue / TotalValue * 100;
     }
 
-    public class Dicom3D
+    public class Dicom3D : IDisposable
     {
+        private bool disposed = false;
         private readonly List<Vector3> vertices = new List<Vector3>();
         private readonly List<Vector3> colors = new List<Vector3>();
         private readonly List<int> indices = new List<int>();
@@ -55,6 +57,88 @@ namespace DeepBridgeWindowsApp.Dicom
         private int backClip = 0;
         private int totalSlices;
         private int currentVisibleIndices;
+
+        // Implement IDisposable pattern
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!disposed)
+            {
+                Debug.WriteLine($"Dicom3D Dispose start - Disposing: {disposing}");
+                Debug.WriteLine($"Vertices count before clear: {vertices?.Count ?? 0}");
+                Debug.WriteLine($"Colors count before clear: {colors?.Count ?? 0}");
+                Debug.WriteLine($"Indices count before clear: {indices?.Count ?? 0}");
+                Debug.WriteLine($"PointColors count before clear: {pointColors?.Count ?? 0}");
+
+                if (disposing)
+                {
+                    // Dispose managed resources
+                    vertices?.Clear();
+                    colors?.Clear();
+                    indices?.Clear();
+                    pointColors?.Clear();
+
+                    Debug.WriteLine("Cleared all collections");
+                }
+
+                // Clean up unmanaged resources (OpenGL buffers)
+                try
+                {
+                    // Check if we have a valid GL context
+                    GL.GetInteger(GetPName.MaxVertexAttribs, out int _);
+
+                    if (vertexBufferObject != null)
+                    {
+                        Debug.WriteLine("Deleting vertex buffers");
+                        GL.DeleteBuffers(vertexBufferObject.Length, vertexBufferObject);
+                        vertexBufferObject = null;
+                    }
+
+                    if (colorBufferObject != null)
+                    {
+                        Debug.WriteLine("Deleting color buffers");
+                        GL.DeleteBuffers(colorBufferObject.Length, colorBufferObject);
+                        colorBufferObject = null;
+                    }
+
+                    if (elementBufferObject != null)
+                    {
+                        Debug.WriteLine("Deleting element buffers");
+                        GL.DeleteBuffers(elementBufferObject.Length, elementBufferObject);
+                        elementBufferObject = null;
+                    }
+
+                    if (vertexArrayObject != 0)
+                    {
+                        Debug.WriteLine("Deleting vertex array object");
+                        GL.DeleteVertexArray(vertexArrayObject);
+                        vertexArrayObject = 0;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Exception during GL cleanup: {ex.Message}");
+                    Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                }
+
+                disposed = true;
+                Debug.WriteLine("Dicom3D Dispose complete");
+                Debug.WriteLine($"Vertices count after clear: {vertices?.Count ?? 0}");
+                Debug.WriteLine($"Colors count after clear: {colors?.Count ?? 0}");
+                Debug.WriteLine($"Indices count after clear: {indices?.Count ?? 0}");
+                Debug.WriteLine($"PointColors count after clear: {pointColors?.Count ?? 0}");
+            }
+        }
+
+        ~Dicom3D()
+        {
+            Dispose(false);
+        }
 
         // Slicing
         private readonly Dictionary<Vector3, Vector3> pointColors = new Dictionary<Vector3, Vector3>();
@@ -434,18 +518,6 @@ namespace DeepBridgeWindowsApp.Dicom
             GL.PointSize(2.0f);
             GL.BindVertexArray(vertexArrayObject);
             GL.DrawElements(PrimitiveType.Points, indices.Count, DrawElementsType.UnsignedInt, 0);
-        }
-
-        public void Dispose()
-        {
-            if (vertexBufferObject != null)
-                GL.DeleteBuffer(vertexBufferObject[0]);
-            if (colorBufferObject != null)
-                GL.DeleteBuffer(colorBufferObject[0]);
-            if (elementBufferObject != null)
-                GL.DeleteBuffer(elementBufferObject[0]);
-            GL.DeleteVertexArray(vertexArrayObject);
-            pointColors.Clear();
         }
     }
 }

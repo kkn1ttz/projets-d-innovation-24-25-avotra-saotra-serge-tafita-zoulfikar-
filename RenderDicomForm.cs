@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Printing;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using DeepBridgeWindowsApp.Dicom;
@@ -69,6 +71,9 @@ namespace DeepBridgeWindowsApp
             0f, 0.5f, -0.5f,
         };
         private int sliceWidth;
+        private CancellationTokenSource _sliceUpdateCts;
+        private readonly int _debounceMs = 150; // Adjust this value to control debounce timing
+        private Task _currentSliceTask;
 
         // Shaders
         private int shaderProgram;
@@ -224,12 +229,13 @@ namespace DeepBridgeWindowsApp
             // Ajouter les contrôles au FlowLayoutPanel
             checkBox = new CheckBox
             {
-                Text = "Show Extract Position",
+                Text = "Show Live Slice",
                 ForeColor = Color.White,
                 AutoSize = true,
                 Checked = false
             };
             checkBox.CheckedChanged += (s, e) => gl.Invalidate();
+            checkBox.CheckedChanged += (s, e) => UpdateSlicePreview();
 
             slicePositionX = new NumericUpDown
             {
@@ -264,14 +270,14 @@ namespace DeepBridgeWindowsApp
             slicePositionZ.ValueChanged += (s, e) => gl.Invalidate();
 
             // Add slice button
-            sliceButton = new Button
-            {
-                Dock = DockStyle.Bottom,
-                Text = "Extract Slice",
-                AutoSize = true,
-                ForeColor = Color.White
-            };
-            sliceButton.Click += SliceButton_Click;
+            //sliceButton = new Button
+            //{
+            //    Dock = DockStyle.Bottom,
+            //    Text = "Extract Slice",
+            //    AutoSize = true,
+            //    ForeColor = Color.White
+            //};
+            //sliceButton.Click += SliceButton_Click;
 
             //clipPanel.Controls.AddRange(new Control[] {
             //    clipLabel,
@@ -325,6 +331,11 @@ namespace DeepBridgeWindowsApp
                 Increment = 1m
             };
             angleXYInput.ValueChanged += (s, e) => gl.Invalidate();
+
+            slicePositionX.ValueChanged += (s, e) => UpdateSlicePreview();
+            slicePositionZ.ValueChanged += (s, e) => UpdateSlicePreview();
+            angleYZInput.ValueChanged += (s, e) => UpdateSlicePreview();
+            angleXYInput.ValueChanged += (s, e) => UpdateSlicePreview();
 
             this.Controls.Add(slicePreview);
 
@@ -487,128 +498,138 @@ namespace DeepBridgeWindowsApp
             }
         }
 
-        private async void SliceButton_Click(object sender, EventArgs e)
+        private async void UpdateSlicePreview()
         {
-            if (render != null)
+            if (!checkBox.Checked) return;
+
+            if (_sliceUpdateCts != null)
             {
-                try
-                {
-                    // Disable button while processing
-                    sliceButton.Enabled = false;
-                    sliceButton.Text = "Processing...";
-                    Cursor = Cursors.WaitCursor;
-
-                    float normalizedX = ((float)slicePositionX.Value / (sliceWidth - 1)) - 0.5f;
-                    float normalizedZ = ((float)slicePositionZ.Value / (ddm.GetTotalSlices() - 1)) - 0.5f;
-                    float angleYZ = (float)((double)angleYZInput.Value * Math.PI / 180.0);
-                    float angleXY = (float)((double)angleXYInput.Value * Math.PI / 180.0);
-
-                    Console.WriteLine($"Extracting slice at X: {slicePositionX.Value}, Z: {slicePositionZ.Value}, Angle YZ: {angleYZInput.Value}, Angle XY: {angleXYInput.Value}");
-                    var slice = await Task.Run(() => render.ExtractSlice(normalizedX, normalizedZ, angleYZ, angleXY));
-
-                    if (slice != null)
-                    {
-                        // If there's an existing image, dispose it
-                        if (slicePreview.Image != null)
-                        {
-                            var oldImage = slicePreview.Image;
-                            slicePreview.Image = null;
-                            oldImage.Dispose();
-                        }
-
-                        var rotatedSlice = RotateImage(slice);
-                        //slice.Dispose(); // Dispose the original slice
-
-                        slicePreview.Width = rotatedSlice.Width + 10;
-                        slicePreview.Height = rotatedSlice.Height + 10;
-                        slicePreview.Location = new Point(
-                            this.ClientSize.Width - slicePreview.Width - 10,
-                            10
-                        );
-
-                        // Set the new image and show the preview
-                        slicePreview.Image = rotatedSlice;
-                        slicePreview.Visible = true;
-
-                        // Add resolution label
-                        var resolutionLabel = new Label
-                        {
-                            Text = $"Resolution: {rotatedSlice.Width} x {rotatedSlice.Height}",
-                            AutoSize = true,
-                            BackColor = Color.FromArgb(200, 0, 0, 0),
-                            ForeColor = Color.White,
-                            Padding = new Padding(5),
-                        };
-
-                        // Calculate preview size based on image dimensions
-                        const int MIN_PREVIEW_SIZE = 300; // Minimum preview size
-                        float scale = 1.0f;
-                        int previewWidth = rotatedSlice.Width;
-                        int previewHeight = rotatedSlice.Height;
-
-                        // If either dimension is too small, scale up the image
-                        const float MIN_HEIGHT = 100f; // Minimum height to ensure visibility
-                        if (rotatedSlice.Height < MIN_HEIGHT || rotatedSlice.Width < MIN_PREVIEW_SIZE)
-                        {
-                            // Calculate scale factors for both width and height constraints
-                            float scaleWidth = MIN_PREVIEW_SIZE / (float)rotatedSlice.Width;
-                            float scaleHeight = MIN_HEIGHT / (float)rotatedSlice.Height;
-                            // Use the larger scale factor to ensure both minimums are met
-                            scale = Math.Max(scaleWidth, scaleHeight);
-                            previewWidth = (int)(rotatedSlice.Width * scale);
-                            previewHeight = (int)(rotatedSlice.Height * scale);
-                        }
-
-                        slicePreview.Width = previewWidth + 10;
-                        slicePreview.Height = previewHeight + 30; // Extra space for resolution label
-                        slicePreview.Location = new Point(
-                            this.ClientSize.Width - slicePreview.Width - 10,
-                            10
-                        );
-
-                        // Position resolution label at bottom of preview
-                        resolutionLabel.Location = new Point(
-                            slicePreview.Left + 5,
-                            slicePreview.Bottom - resolutionLabel.Height - 5
-                        );
-
-                        // Remove existing resolution label if it exists
-                        var existingLabel = this.Controls.OfType<Label>()
-                            .FirstOrDefault(l => l.Tag?.ToString() == "ResolutionLabel");
-                        if (existingLabel != null)
-                        {
-                            this.Controls.Remove(existingLabel);
-                            existingLabel.Dispose();
-                        }
-
-                        resolutionLabel.Tag = "ResolutionLabel";
-                        this.Controls.Add(resolutionLabel);
-                        resolutionLabel.BringToFront();
-
-                        // Optional: Add a save button or right-click menu
-                        var saveMenu = new ContextMenuStrip();
-                        var saveItem = new ToolStripMenuItem("Save Slice...");
-                        saveItem.Click += (s, args) => SaveSlice(slice);
-                        saveMenu.Items.Add(saveItem);
-                        slicePreview.ContextMenuStrip = saveMenu;
-                    }
-                    else
-                    {
-                        MessageBox.Show("Failed to extract slice. No points found at the specified position.");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Error extracting slice: {ex.Message}");
-                }
-                finally
-                {
-                    // Re-enable button and restore cursor
-                    sliceButton.Enabled = true;
-                    sliceButton.Text = "Extract Slice";
-                    Cursor = Cursors.Default;
-                }
+                _sliceUpdateCts.Cancel();
+                _sliceUpdateCts.Dispose();
             }
+            _sliceUpdateCts = new CancellationTokenSource();
+            var token = _sliceUpdateCts.Token;
+
+            try
+            {
+                // Wait for debounce period
+                await Task.Delay(_debounceMs, token);
+
+                if (render == null) return;
+
+                float normalizedX = ((float)slicePositionX.Value / (sliceWidth - 1)) - 0.5f;
+                float normalizedZ = ((float)slicePositionZ.Value / (ddm.GetTotalSlices() - 1)) - 0.5f;
+                float angleYZ = (float)((double)angleYZInput.Value * Math.PI / 180.0);
+                float angleXY = (float)((double)angleXYInput.Value * Math.PI / 180.0);
+
+                _currentSliceTask = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var slice = await Task.Run(() => render.ExtractSlice(normalizedX, normalizedZ, angleYZ, angleXY), token);
+
+                        if (!token.IsCancellationRequested && slice != null)
+                        {
+                            await this.InvokeAsync(async () =>
+                            {
+                                // If there's an existing image, dispose it
+                                if (slicePreview.Image != null)
+                                {
+                                    var oldImage = slicePreview.Image;
+                                    slicePreview.Image = null;
+                                    oldImage.Dispose();
+                                }
+
+                                var rotatedSlice = RotateImage(slice);
+
+                                // Calculate preview size
+                                const float MIN_HEIGHT = 100f;
+                                const int MIN_PREVIEW_SIZE = 300;
+                                float scale = 1.0f;
+                                int previewWidth = rotatedSlice.Width;
+                                int previewHeight = rotatedSlice.Height;
+
+                                if (rotatedSlice.Height < MIN_HEIGHT || rotatedSlice.Width < MIN_PREVIEW_SIZE)
+                                {
+                                    float scaleWidth = MIN_PREVIEW_SIZE / (float)rotatedSlice.Width;
+                                    float scaleHeight = MIN_HEIGHT / (float)rotatedSlice.Height;
+                                    scale = Math.Max(scaleWidth, scaleHeight);
+                                    previewWidth = (int)(rotatedSlice.Width * scale);
+                                    previewHeight = (int)(rotatedSlice.Height * scale);
+                                }
+
+                                slicePreview.Width = previewWidth + 10;
+                                slicePreview.Height = previewHeight + 30;
+                                slicePreview.Location = new Point(
+                                    this.ClientSize.Width - slicePreview.Width - 10,
+                                    10
+                                );
+
+                                slicePreview.Image = rotatedSlice;
+                                slicePreview.Visible = true;
+
+                                // Update resolution label
+                                UpdateResolutionLabel(rotatedSlice.Width, rotatedSlice.Height);
+                            });
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Task was cancelled, ignore
+                    }
+                    catch (Exception ex)
+                    {
+                        await this.InvokeAsync(() =>
+                        {
+                            MessageBox.Show($"Error extracting slice: {ex.Message}");
+                        });
+                    }
+                }, token);
+
+                await _currentSliceTask;
+            }
+            catch (OperationCanceledException)
+            {
+                // Debounce was cancelled, ignore
+            }
+        }
+
+        private async Task InvokeAsync(Action action)
+        {
+            if (this.InvokeRequired)
+            {
+                await Task.Run(() => this.Invoke(action));
+            }
+            else
+            {
+                action();
+            }
+        }
+
+        private void UpdateResolutionLabel(int width, int height)
+        {
+            var resolutionLabel = this.Controls.OfType<Label>()
+                .FirstOrDefault(l => l.Tag?.ToString() == "ResolutionLabel");
+
+            if (resolutionLabel == null)
+            {
+                resolutionLabel = new Label
+                {
+                    AutoSize = true,
+                    BackColor = Color.FromArgb(200, 0, 0, 0),
+                    ForeColor = Color.White,
+                    Padding = new Padding(5),
+                    Tag = "ResolutionLabel"
+                };
+                this.Controls.Add(resolutionLabel);
+            }
+
+            resolutionLabel.Text = $"Resolution: {width} x {height}";
+            resolutionLabel.Location = new Point(
+                slicePreview.Left + 5,
+                slicePreview.Bottom - resolutionLabel.Height - 5
+            );
+            resolutionLabel.BringToFront();
         }
 
         private async void RenderDicomForm_Load(object sender, EventArgs e)
@@ -992,5 +1013,130 @@ namespace DeepBridgeWindowsApp
             GL.Viewport(0, 0, gl.ClientSize.Width, gl.ClientSize.Height);
         }
         #endregion
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                Debug.WriteLine("Disposing RenderDicomForm...");
+
+                // Cancel any pending operations
+                if (_sliceUpdateCts != null)
+                {
+                    _sliceUpdateCts.Cancel();
+                    _sliceUpdateCts.Dispose();
+                    _sliceUpdateCts = null;
+                }
+
+                // Wait for any current slice task to complete
+                if (_currentSliceTask != null)
+                {
+                    try
+                    {
+                        _currentSliceTask.Wait(TimeSpan.FromSeconds(1));
+                    }
+                    catch (Exception)
+                    {
+                        // Ignore any exceptions during cleanup
+                    }
+                    _currentSliceTask = null;
+                }
+
+                // Dispose timers
+                if (moveTimer != null)
+                {
+                    moveTimer.Stop();
+                    moveTimer.Dispose();
+                    moveTimer = null;
+                }
+
+                // Dispose GL resources
+                if (gl != null)
+                {
+                    // Make sure we have the current context before cleaning up GL resources
+                    try
+                    {
+                        gl.MakeCurrent();
+
+                        // Delete shader programs
+                        if (shaderProgram != 0)
+                        {
+                            GL.DeleteProgram(shaderProgram);
+                            shaderProgram = 0;
+                        }
+                        if (ColorShaderProgram != 0)
+                        {
+                            GL.DeleteProgram(ColorShaderProgram);
+                            ColorShaderProgram = 0;
+                        }
+
+                        // Dispose render object
+                        if (render != null)
+                        {
+                            render.Dispose();
+                            render = null;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        // Ignore GL context errors during cleanup
+                    }
+                    finally
+                    {
+                        gl.Dispose();
+                        gl = null;
+                    }
+                }
+
+                // Dispose preview image
+                if (slicePreview != null && slicePreview.Image != null)
+                {
+                    slicePreview.Image.Dispose();
+                    slicePreview.Image = null;
+                }
+
+                // Clear collections
+                pressedKeys.Clear();
+
+                // Dispose Windows Forms controls
+                if (components != null)
+                {
+                    components.Dispose();
+                    components = null;
+                }
+
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+            }
+
+            base.Dispose(disposing);
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            // Stop any ongoing operations
+            if (_sliceUpdateCts != null)
+            {
+                _sliceUpdateCts.Cancel();
+            }
+
+            if (moveTimer != null)
+            {
+                moveTimer.Stop();
+            }
+
+            // Remove event handlers
+            if (gl != null)
+            {
+                gl.Paint -= GLControl_Paint;
+                gl.Resize -= GLControl_Resize;
+                gl.MouseDown -= GL_MouseDown;
+                gl.MouseUp -= GL_MouseUp;
+                gl.MouseMove -= GL_MouseMove;
+                gl.MouseWheel -= GL_MouseWheel;
+            }
+
+            base.OnFormClosing(e);
+        }
     }
 }
