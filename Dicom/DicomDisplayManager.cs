@@ -10,6 +10,8 @@ namespace DeepBridgeWindowsApp.Dicom
 {
     public class DicomDisplayManager
     {
+        public string DirectoryPath => reader.DirectoryPath;
+        private readonly DicomReader reader;
         public DicomMetadata[] slices;
         public DicomMetadata globalView { get; private set; }
         private int currentSliceIndex;
@@ -18,6 +20,7 @@ namespace DeepBridgeWindowsApp.Dicom
 
         public DicomDisplayManager(DicomReader reader)
         {
+            this.reader = reader;
             globalView = reader.GlobalView;
             slices = reader.Slices ?? Array.Empty<DicomMetadata>();
             currentSliceIndex = 0;

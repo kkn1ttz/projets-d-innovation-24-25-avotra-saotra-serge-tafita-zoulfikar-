@@ -15,6 +15,8 @@ namespace DeepBridgeWindowsApp.DICOM
     public class DicomReader
     {
         private readonly string directoryPath;
+        public string DirectoryPath => directoryPath;
+
         public DicomMetadata[] Slices { get; private set; }
         public DicomMetadata GlobalView { get; private set; }
 
