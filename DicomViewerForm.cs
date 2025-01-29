@@ -196,9 +196,9 @@ namespace DeepBridgeWindowsApp
             {
                 Dock = DockStyle.Bottom,
                 Minimum = 0,
-                Maximum = displayManager.GetTotalSlices() - 1,
+                Maximum = displayManager.GetTotalSlices(),
                 MinValue = 0,
-                MaxValue = displayManager.GetTotalSlices() - 1,
+                MaxValue = displayManager.GetTotalSlices(),
                 TickStyle = TickStyle.TopLeft
             };
             doubleTrackBar.ValueChanged += DoubleTrackBar_ValueChanged;
@@ -218,7 +218,7 @@ namespace DeepBridgeWindowsApp
                 Dock = DockStyle.Bottom,
                 TextAlign = ContentAlignment.MiddleCenter,
                 Height = 20,
-                Text = $"Max: {displayManager.GetTotalSlices() - 1}"
+                Text = $"Max: {displayManager.GetTotalSlices()}"
             };
 
             contentPanel.Controls.AddRange(new Control[] { mainPictureBox, sliceLabel, sliceTrackBar, doubleTrackBar, minLabel, maxLabel });
