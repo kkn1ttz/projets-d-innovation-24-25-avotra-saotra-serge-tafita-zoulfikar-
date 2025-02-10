@@ -14,6 +14,7 @@ using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Security.Policy;
 using DeepBridgeWindowsApp.Dicom;
+using System.IO;
 
 namespace DeepBridgeWindowsApp
 {
@@ -264,21 +265,17 @@ namespace DeepBridgeWindowsApp
 
         private void Button_Click(object sender, EventArgs e)
         {
-            var resizedStartPoint = ConvertToResizedCoordinates(startPoint);
-            var resizedEndPoint = ConvertToResizedCoordinates(endPoint);
-            var resizedRect = GetResizedRectangle(GetRectangle(startPoint, endPoint));
+            // Récupérer le chemin du dossier patient
+            string basePath = Path.GetDirectoryName(displayManager.DirectoryPath);
 
-            var renderForm = new RenderDicomForm(
-                displayManager,
-                doubleTrackBar.MinValue,
-                doubleTrackBar.MaxValue,
-                resizedStartPoint.X,
-                resizedStartPoint.Y,
-                resizedEndPoint.X,
-                resizedEndPoint.Y,
-                resizedRect.Width,
-                resizedRect.Height
-            );
+            // Récupérer le nom du dossier actuel (le nom du scan)
+            string scanFolderName = new DirectoryInfo(displayManager.DirectoryPath).Name;
+
+            // Combiner le chemin avec le nom du dossier
+            string fullPath = Path.Combine(basePath, scanFolderName);
+
+            var renderForm = new RenderDicomForm(displayManager, doubleTrackBar.MinValue, doubleTrackBar.MaxValue, fullPath);
+
             renderForm.Show();
         }
 

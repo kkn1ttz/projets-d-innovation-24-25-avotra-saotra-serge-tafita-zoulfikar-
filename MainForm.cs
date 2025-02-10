@@ -267,7 +267,7 @@ namespace DeepBridgeWindowsApp
         {
             var path = viewDicomButton.Tag.ToString();
             var reader = new DicomReader(path);
-            reader.LoadAllFiles();  // Now loads all files when viewing
+            reader.LoadAllFiles();
             var viewerForm = new DicomViewerForm(reader);
             viewerForm.ShowDialog();
         }

@@ -11,6 +11,7 @@ using DeepBridgeWindowsApp.Dicom;
 using OpenTK.GLControl;
 using OpenTK.Graphics.OpenGL;
 using OpenTK.Mathematics;
+using System.IO;
 
 namespace DeepBridgeWindowsApp
 {
@@ -29,6 +30,7 @@ namespace DeepBridgeWindowsApp
         private Label progressLabel;
         private Label controlsHelpLabel;
         private Label controlsLabel;
+        private readonly string patientDirectory;
 
         // Propriétés de la caméra
         private Vector3 cameraPosition = new Vector3(0, 0, 3f);
@@ -121,21 +123,14 @@ namespace DeepBridgeWindowsApp
             FragColor = vec4(color, 0.5);
         }";
 
-        public RenderDicomForm(DicomDisplayManager ddm,
-        int minSlice,
-        int maxSlice,
-        int startX,
-        int startY,
-        int endX,
-        int endY,
-        int selectionWidth,
-        int selectionHeight)
+        public RenderDicomForm(DicomDisplayManager ddm, int minSlice, int maxSlice, string patientDirectory)
         {
             this.ddm = ddm;
             this.minSlice = minSlice;
             this.maxSlice = maxSlice;
             this.dicom = this.ddm.globalView;
             this.sliceWidth = ddm.GetSlice(0).Columns;
+            this.patientDirectory = patientDirectory;
             InitializeComponents();
             InitializeKeyboardControls();
         }
@@ -248,8 +243,24 @@ namespace DeepBridgeWindowsApp
                 AutoSize = true,
                 Checked = false
             };
-            checkBox.CheckedChanged += (s, e) => gl.Invalidate();
-            checkBox.CheckedChanged += (s, e) => UpdateSlicePreview();
+
+            checkBox.CheckedChanged += (s, e) =>
+            {
+                gl.Invalidate();
+                if (checkBox.Checked)
+                {
+                    // Créer et initialiser la preview seulement quand on active la checkbox
+                    if (slicePreview == null)
+                    {
+                        InitializeSlicePreview();
+                    }
+                    UpdateSlicePreview();
+                }
+                else if (slicePreview != null)
+                {
+                    slicePreview.Visible = false;
+                }
+            };
 
             slicePositionX = new NumericUpDown
             {
@@ -300,15 +311,6 @@ namespace DeepBridgeWindowsApp
             //    frontClipLabel,
             //    backClipLabel,
             //});
-
-            // Add preview PictureBox for the slice
-            slicePreview = new PictureBox
-            {
-                SizeMode = PictureBoxSizeMode.Zoom,
-                BorderStyle = BorderStyle.FixedSingle,
-                Anchor = AnchorStyles.Top | AnchorStyles.Right,
-                Visible = false  // Hide initially
-            };
 
             // YZ rotation (around X axis)
             var angleYZLabel = new Label
@@ -368,7 +370,7 @@ namespace DeepBridgeWindowsApp
             flowPanel.Controls.Add(angleYZInput);
             flowPanel.Controls.Add(angleXYLabel);
             flowPanel.Controls.Add(angleXYInput);
-            
+
             // Ajouter le FlowLayoutPanel au panel gauche
             leftPanel.Controls.Add(flowPanel);
             leftPanel.Controls.Add(sliceButton);
@@ -925,7 +927,7 @@ namespace DeepBridgeWindowsApp
             GL.UniformMatrix4(projLoc, false, ref projection);
 
             render.Render(shaderProgram, model, view, projection);
-            
+
             DrawBoundingBox(model, view, projection);
             DrawSliceIndicator(model, view, projection);
 
@@ -1046,6 +1048,87 @@ namespace DeepBridgeWindowsApp
             GL.Viewport(0, 0, gl.ClientSize.Width, gl.ClientSize.Height);
         }
         #endregion
+
+        #region SaveSlice
+
+        private void InitializeSlicePreviewEvents()
+        {
+            slicePreview.ContextMenuStrip = new ContextMenuStrip();
+            var saveMenuItem = new ToolStripMenuItem("Enregistrer la coupe");
+            saveMenuItem.Click += SaveSlice_Click;
+            slicePreview.ContextMenuStrip.Items.Add(saveMenuItem);
+        }
+
+        private void InitializeSlicePreview()
+        {
+            slicePreview = new PictureBox
+            {
+                SizeMode = PictureBoxSizeMode.Zoom,
+                BorderStyle = BorderStyle.FixedSingle,
+                Width = 512,
+                Height = 512,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                BackColor = Color.Black,
+                Visible = false
+            };
+
+            // Positionner en haut à droite
+            slicePreview.Location = new Point(
+                this.ClientSize.Width - slicePreview.Width - 20,
+                20
+            );
+
+            // Ajouter au formulaire et configurer les événements
+            this.Controls.Add(slicePreview);
+            InitializeSlicePreviewEvents();
+            slicePreview.BringToFront();
+        }
+
+        private void SaveSlice_Click(object sender, EventArgs e)
+        {
+            if (slicePreview.Image == null) return;
+
+            string layersDir = Path.Combine(patientDirectory, "calque");
+
+            // Créer le dossier calque s'il n'existe pas
+            if (!Directory.Exists(layersDir))
+            {
+                Directory.CreateDirectory(layersDir);
+            }
+
+            // Trouver le prochain numéro de sous-dossier disponible
+            int layerNumber = 1;
+            string layerSubDir;
+            do
+            {
+                layerSubDir = Path.Combine(layersDir, $"calque#{layerNumber}");
+                layerNumber++;
+            } while (Directory.Exists(layerSubDir));
+
+            // Créer le sous-dossier
+            Directory.CreateDirectory(layerSubDir);
+
+            // Générer le nom du fichier avec timestamp
+            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string filename = $"coupe_{timestamp}.png";
+            string fullPath = Path.Combine(layerSubDir, filename);
+
+            try
+            {
+                // Sauvegarder l'image
+                slicePreview.Image.Save(fullPath, System.Drawing.Imaging.ImageFormat.Png);
+                MessageBox.Show($"Coupe sauvegardée dans:\n{fullPath}", "Sauvegarde réussie",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Erreur lors de la sauvegarde: {ex.Message}", "Erreur",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        #endregion
+
         protected override void Dispose(bool disposing)
         {
             if (disposing)
