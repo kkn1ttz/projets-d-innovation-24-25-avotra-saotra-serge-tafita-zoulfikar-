@@ -30,11 +30,22 @@ namespace DeepBridgeWindowsApp
         private Label windowWidthLabel;
         private Label minLabel;
         private Label maxLabel;
+        private Point startPoint;
+        private Point endPoint;
+        private bool isDrawing = false;
+        private Label startPointLabel;
+        private Label endPointLabel;
+        private Label areaLabel;
+        private const int TARGET_SIZE = 512;
 
         public DicomViewerForm(DicomReader reader)
         {
             displayManager = new DicomDisplayManager(reader);
             InitializeComponents();
+            mainPictureBox.MouseDown += MainPictureBox_MouseDown;
+            mainPictureBox.MouseMove += MainPictureBox_MouseMove;
+            mainPictureBox.MouseUp += MainPictureBox_MouseUp;
+            mainPictureBox.Paint += MainPictureBox_Paint;
         }
 
         private void InitializeComponents()
@@ -67,6 +78,30 @@ namespace DeepBridgeWindowsApp
             AddInfoRow(patientInfo, "Modality", currentSlice.Modality);
             AddInfoRow(patientInfo, "Resolution", currentSlice.Rows + " x " + currentSlice.Columns);
             infoPanel.Controls.Add(patientInfo);
+
+            // Add labels for start point, end point, and area
+            startPointLabel = new Label
+            {
+                Text = "Start Point: (0, 0)",
+                AutoSize = true,
+                Location = new Point(10, patientInfo.Bottom + 10)
+            };
+            endPointLabel = new Label
+            {
+                Text = "End Point: (0, 0)",
+                AutoSize = true,
+                Location = new Point(10, startPointLabel.Bottom + 10)
+            };
+            areaLabel = new Label
+            {
+                Text = "Area: 0",
+                AutoSize = true,
+                Location = new Point(10, endPointLabel.Bottom + 10)
+            };
+
+            infoPanel.Controls.Add(startPointLabel);
+            infoPanel.Controls.Add(endPointLabel);
+            infoPanel.Controls.Add(areaLabel);
 
             var buttonPanel = new Panel
             {
@@ -229,7 +264,21 @@ namespace DeepBridgeWindowsApp
 
         private void Button_Click(object sender, EventArgs e)
         {
-            var renderForm = new RenderDicomForm(displayManager, doubleTrackBar.MinValue, doubleTrackBar.MaxValue);
+            var resizedStartPoint = ConvertToResizedCoordinates(startPoint);
+            var resizedEndPoint = ConvertToResizedCoordinates(endPoint);
+            var resizedRect = GetResizedRectangle(GetRectangle(startPoint, endPoint));
+
+            var renderForm = new RenderDicomForm(
+                displayManager,
+                doubleTrackBar.MinValue,
+                doubleTrackBar.MaxValue,
+                resizedStartPoint.X,
+                resizedStartPoint.Y,
+                resizedEndPoint.X,
+                resizedEndPoint.Y,
+                resizedRect.Width,
+                resizedRect.Height
+            );
             renderForm.Show();
         }
 
@@ -263,10 +312,59 @@ namespace DeepBridgeWindowsApp
         private void UpdateDisplay()
         {
             mainPictureBox.Image?.Dispose();
-            mainPictureBox.Image = displayManager.GetCurrentSliceImage(windowWidthTrackBar.Value, windowCenterTrackBar.Value);
+            var originalImage = displayManager.GetCurrentSliceImage(windowWidthTrackBar.Value, windowCenterTrackBar.Value);
+
+            var resizedImage = new Bitmap(TARGET_SIZE, TARGET_SIZE);
+            using (var g = Graphics.FromImage(resizedImage))
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                g.DrawImage(originalImage, 0, 0, TARGET_SIZE, TARGET_SIZE);
+            }
+
+            mainPictureBox.Image = resizedImage;
             sliceLabel.Text = $"Slice {displayManager.GetCurrentSliceIndex() + 1} of {displayManager.GetTotalSlices()}";
             windowCenterLabel.Text = "Window Center: " + windowCenterTrackBar.Value;
             windowWidthLabel.Text = "Window Width: " + windowWidthTrackBar.Value;
+        }
+
+        private Point ConvertToResizedCoordinates(Point clickPoint)
+        {
+            var displayedSize = GetDisplayedImageSize();
+            var picBox = mainPictureBox;
+
+            int offsetX = (picBox.ClientSize.Width - displayedSize.Width) / 2;
+            int offsetY = (picBox.ClientSize.Height - displayedSize.Height) / 2;
+
+            clickPoint.X -= offsetX;
+            clickPoint.Y -= offsetY;
+
+            if (clickPoint.X < 0 || clickPoint.Y < 0 ||
+                clickPoint.X > displayedSize.Width || clickPoint.Y > displayedSize.Height)
+                return Point.Empty;
+
+            float scaleX = (float)TARGET_SIZE / displayedSize.Width;
+            float scaleY = (float)TARGET_SIZE / displayedSize.Height;
+
+            return new Point(
+                (int)(clickPoint.X * scaleX),
+                (int)(clickPoint.Y * scaleY)
+            );
+        }
+
+        private Rectangle GetResizedRectangle(Rectangle originalRect)
+        {
+            var p1 = ConvertToResizedCoordinates(new Point(originalRect.X, originalRect.Y));
+            var p2 = ConvertToResizedCoordinates(new Point(originalRect.Right, originalRect.Bottom));
+
+            if (p1 == Point.Empty || p2 == Point.Empty)
+                return Rectangle.Empty;
+
+            return new Rectangle(
+                Math.Min(p1.X, p2.X),
+                Math.Min(p1.Y, p2.Y),
+                Math.Abs(p2.X - p1.X),
+                Math.Abs(p2.Y - p1.Y)
+            );
         }
 
         private void DoubleTrackBar_MouseUp(object sender, MouseEventArgs e)
@@ -287,5 +385,101 @@ namespace DeepBridgeWindowsApp
             maxLabel.Text = "Max: " + doubleTrackBar.MaxValue;
         }
 
+        private void MainPictureBox_MouseDown(object sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                isDrawing = true;
+                startPoint = e.Location;
+                var resizedPoint = ConvertToResizedCoordinates(startPoint);
+                if (resizedPoint != Point.Empty)
+                {
+                    startPointLabel.Text = $"Start Point: ({resizedPoint.X}, {resizedPoint.Y})";
+                }
+            }
+        }
+
+        private void MainPictureBox_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (isDrawing)
+            {
+                endPoint = e.Location;
+                var resizedPoint = ConvertToResizedCoordinates(endPoint);
+                if (resizedPoint != Point.Empty)
+                {
+                    endPointLabel.Text = $"End Point: ({resizedPoint.X}, {resizedPoint.Y})";
+                    var resizedRect = GetResizedRectangle(GetRectangle(startPoint, endPoint));
+                    if (resizedRect != Rectangle.Empty)
+                    {
+                        areaLabel.Text = $"Area: {resizedRect.Width * resizedRect.Height}";
+                    }
+                }
+                mainPictureBox.Invalidate();
+            }
+        }
+
+        private void MainPictureBox_MouseUp(object sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                isDrawing = false;
+                endPoint = e.Location;
+                var resizedPoint = ConvertToResizedCoordinates(endPoint);
+                if (resizedPoint != Point.Empty)
+                {
+                    endPointLabel.Text = $"End Point: ({resizedPoint.X}, {resizedPoint.Y})";
+                    var resizedRect = GetResizedRectangle(GetRectangle(startPoint, endPoint));
+                    if (resizedRect != Rectangle.Empty)
+                    {
+                        areaLabel.Text = $"Area: {resizedRect.Width * resizedRect.Height}";
+                    }
+                }
+                mainPictureBox.Invalidate();
+            }
+        }
+
+        private void MainPictureBox_Paint(object sender, PaintEventArgs e)
+        {
+            if (isDrawing || startPoint != endPoint)
+            {
+                var rect = GetRectangle(startPoint, endPoint);
+                e.Graphics.DrawRectangle(Pens.Red, rect);
+            }
+        }
+
+        private Rectangle GetRectangle(Point p1, Point p2)
+        {
+            return new Rectangle(
+                Math.Min(p1.X, p2.X),
+                Math.Min(p1.Y, p2.Y),
+                Math.Abs(p1.X - p2.X),
+                Math.Abs(p1.Y - p2.Y));
+        }
+
+        private Size GetDisplayedImageSize()
+        {
+            if (mainPictureBox.Image == null) return Size.Empty;
+
+            var image = mainPictureBox.Image;
+            var picBox = mainPictureBox;
+
+            float imageRatio = (float)image.Width / image.Height;
+            float containerRatio = (float)picBox.ClientSize.Width / picBox.ClientSize.Height;
+
+            if (imageRatio > containerRatio)
+            {
+                return new Size(
+                    picBox.ClientSize.Width,
+                    (int)(picBox.ClientSize.Width / imageRatio)
+                );
+            }
+            else
+            {
+                return new Size(
+                    (int)(picBox.ClientSize.Height * imageRatio),
+                    picBox.ClientSize.Height
+                );
+            }
+        }
     }
 }

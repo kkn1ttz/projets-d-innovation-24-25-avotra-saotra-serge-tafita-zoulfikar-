@@ -121,7 +121,15 @@ namespace DeepBridgeWindowsApp
             FragColor = vec4(color, 0.5);
         }";
 
-        public RenderDicomForm(DicomDisplayManager ddm, int minSlice, int maxSlice)
+        public RenderDicomForm(DicomDisplayManager ddm,
+        int minSlice,
+        int maxSlice,
+        int startX,
+        int startY,
+        int endX,
+        int endY,
+        int selectionWidth,
+        int selectionHeight)
         {
             this.ddm = ddm;
             this.minSlice = minSlice;
