@@ -37,6 +37,8 @@ namespace DeepBridgeWindowsApp
         private Label startPointLabel;
         private Label endPointLabel;
         private Label areaLabel;
+        private Button optimizeWindowButton;
+        private Button findNeckButton;
         private const int TARGET_SIZE = 512;
 
         public DicomViewerForm(DicomReader reader)
@@ -107,17 +109,32 @@ namespace DeepBridgeWindowsApp
             var buttonPanel = new Panel
             {
                 Dock = DockStyle.Bottom,
-                BackColor = SystemColors.Control
+                BackColor = SystemColors.Control,
+                Height = 80
             };
+
+            // Bouton pour trouver automatiquement le cou
+            findNeckButton = new Button
+            {
+                Dock = DockStyle.Bottom,
+                Text = "Localiser le cou",
+                AutoSize = true,
+                Margin = new Padding(10, 5, 10, 5),
+                Height = 30
+            };
+            findNeckButton.Click += FindNeckButton_Click;
 
             var renderButton = new Button
             {
                 Dock = DockStyle.Bottom,
                 Text = "3D Render",
                 AutoSize = true,
+                Margin = new Padding(10, 5, 10, 5),
+                Height = 30
             };
             renderButton.Click += Button_Click;
 
+            buttonPanel.Controls.Add(findNeckButton);
             buttonPanel.Controls.Add(renderButton);
             infoPanel.Controls.Add(buttonPanel);
 
@@ -192,8 +209,23 @@ namespace DeepBridgeWindowsApp
                 Text = "Window Width: " + displayManager.windowWidth
             };
 
-            controlPanel.Controls.AddRange(new Control[] { windowCenterLabel, windowCenterTrackBar,
-                windowWidthLabel, windowWidthTrackBar });
+            // Bouton d'optimisation des fenêtres
+            optimizeWindowButton = new Button
+            {
+                Dock = DockStyle.Bottom,
+                Text = "Optimiser Fenêtrage",
+                Height = 30,
+                Margin = new Padding(0, 5, 0, 5)
+            };
+            optimizeWindowButton.Click += OptimizeWindow_Click;
+
+            controlPanel.Controls.AddRange(new Control[] {
+                windowCenterLabel,
+                windowCenterTrackBar,
+                windowWidthLabel,
+                windowWidthTrackBar,
+                optimizeWindowButton
+            });
 
             globalBottomViewPanel.Controls.Add(controlPanel);
 
@@ -261,6 +293,315 @@ namespace DeepBridgeWindowsApp
 
             this.Controls.AddRange(new Control[] { contentPanel, infoPanel, globalViewPanel });
             UpdateDisplay();
+        }
+
+        private void FindNeckButton_Click(object sender, EventArgs e)
+        {
+            FindNeckPosition();
+        }
+
+        private void FindNeckPosition()
+        {
+            try
+            {
+                int totalSlices = displayManager.GetTotalSlices();
+
+                // Rechercher dans un intervalle de ±35% autour du milieu
+                int centerSlice = totalSlices / 2;
+                int searchRange = (int)(totalSlices * 0.35);
+                int startSlice = Math.Max(0, centerSlice - searchRange);
+                int endSlice = Math.Min(totalSlices - 1, centerSlice + searchRange);
+
+                int bestSlice = centerSlice; // Position centrale du cou (par défaut)
+                int neckTop = startSlice;    // Limite supérieure (début de la mâchoire)
+                int neckBottom = endSlice;   // Limite inférieure (début des épaules)
+                double maxEmptyRatio = 0;
+
+                // Structure pour stocker les ratios de vide pour chaque slice
+                Dictionary<int, double> sliceEmptyRatios = new Dictionary<int, double>();
+
+                // Créer un indicateur de progression
+                using (var progress = new Form())
+                {
+                    progress.StartPosition = FormStartPosition.CenterParent;
+                    progress.FormBorderStyle = FormBorderStyle.FixedDialog;
+                    progress.ControlBox = false;
+                    progress.Text = "Recherche du cou en cours...";
+                    progress.Size = new Size(300, 100);
+
+                    var progressBar = new ProgressBar
+                    {
+                        Minimum = 0,
+                        Maximum = endSlice - startSlice,
+                        Value = 0,
+                        Dock = DockStyle.Top,
+                        Margin = new Padding(10)
+                    };
+
+                    var label = new Label
+                    {
+                        Text = "Analyse des coupes...",
+                        Dock = DockStyle.Top,
+                        TextAlign = ContentAlignment.MiddleCenter
+                    };
+
+                    progress.Controls.Add(progressBar);
+                    progress.Controls.Add(label);
+
+                    // Lancer l'analyse en arrière-plan
+                    var task = Task.Run(() =>
+                    {
+                        for (int i = startSlice; i <= endSlice; i++)
+                        {
+                            int sliceIndex = i;
+                            displayManager.SetSliceIndex(sliceIndex);
+
+                            // Éviter l'accès inter-thread aux contrôles UI
+                            int windowWidthValue = 0;
+                            int windowCenterValue = 0;
+
+                            this.Invoke((MethodInvoker)delegate {
+                                windowWidthValue = windowWidthTrackBar.Value;
+                                windowCenterValue = windowCenterTrackBar.Value;
+                            });
+
+                            // Puis utilisez ces valeurs dans le thread d'arrière-plan
+                            displayManager.SetSliceIndex(sliceIndex);
+                            var sliceImage = displayManager.GetCurrentSliceImage(windowWidthValue, windowCenterValue);
+
+                            // Calculer le ratio de vide (pixels noirs ou presque noirs)
+                            double emptyRatio = CalculateEmptyRatio(sliceImage);
+                            sliceEmptyRatios[sliceIndex] = emptyRatio;
+
+                            // Mise à jour UI
+                            this.Invoke((MethodInvoker)delegate {
+                                progressBar.Value = sliceIndex - startSlice;
+                                label.Text = $"Analyse coupe {sliceIndex}/{endSlice}";
+                            });
+
+                            // Si cette slice a plus de vide (cou plus fin), la mémoriser
+                            if (emptyRatio > maxEmptyRatio)
+                            {
+                                maxEmptyRatio = emptyRatio;
+                                bestSlice = sliceIndex;
+                            }
+                        }
+
+                        // Maintenant, déterminer les limites du cou
+                        // Utiliser un seuil pour détecter des changements significatifs dans le ratio de vide
+                        double thresholdMultiplier = 0.9; // 80% du ratio maximum
+                        double threshold = maxEmptyRatio * thresholdMultiplier;
+
+                        // Remonter depuis le cou pour trouver la limite supérieure (mâchoire)
+                        neckTop = bestSlice;
+                        for (int i = bestSlice; i >= startSlice; i--)
+                        {
+                            if (sliceEmptyRatios[i] < threshold)
+                            {
+                                neckTop = i + 1; // Prendre la slice juste avant la chute du ratio
+                                break;
+                            }
+                        }
+
+                        // Descendre depuis le cou pour trouver la limite inférieure (épaules)
+                        neckBottom = bestSlice;
+                        for (int i = bestSlice; i <= endSlice; i++)
+                        {
+                            if (sliceEmptyRatios[i] < threshold)
+                            {
+                                neckBottom = i - 1; // Prendre la slice juste avant la chute du ratio
+                                break;
+                            }
+                        }
+
+                        // Fermer la fenêtre de progression
+                        this.Invoke((MethodInvoker)delegate {
+                            progress.Close();
+                        });
+                    });
+
+                    progress.ShowDialog();
+                }
+
+                // Mettre à jour le curseur du slicer et les sliders min/max
+                this.Invoke((MethodInvoker)delegate {
+                    // Positionner le slicer principal sur le milieu du cou
+                    sliceTrackBar.Value = bestSlice;
+
+                    // Mettre à jour les sliders min/max pour délimiter la zone du cou
+                    doubleTrackBar.MinValue = neckTop;
+                    doubleTrackBar.MaxValue = neckBottom;
+
+                    // Mettre à jour les labels
+                    minLabel.Text = "Min: " + neckTop;
+                    maxLabel.Text = "Max: " + neckBottom;
+
+                    // Afficher un message de confirmation avec les coordonnées complètes
+                    MessageBox.Show($"Zone du cou identifiée :\n" +
+                                   $"- Haut (mâchoire) : coupe {neckTop + 1}\n" +
+                                   $"- Centre du cou : coupe {bestSlice + 1}\n" +
+                                   $"- Bas (épaules) : coupe {neckBottom + 1}",
+                                   "Localisation terminée",
+                                   MessageBoxButtons.OK,
+                                   MessageBoxIcon.Information);
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Erreur lors de la recherche du cou: {ex.Message}",
+                               "Erreur",
+                               MessageBoxButtons.OK,
+                               MessageBoxIcon.Error);
+            }
+        }
+
+        private double CalculateEmptyRatio(Bitmap image)
+        {
+            // Seuil de luminosité en dessous duquel un pixel est considéré comme "vide"
+            const int EMPTY_THRESHOLD = 30;
+
+            int emptyPixels = 0;
+            int totalPixels = 0;
+
+            using (Bitmap bmp = new Bitmap(image))
+            {
+                // Échantillonnage pour accélérer le calcul (1 pixel sur 5)
+                for (int y = 0; y < bmp.Height; y += 5)
+                {
+                    for (int x = 0; x < bmp.Width; x += 5)
+                    {
+                        Color pixel = bmp.GetPixel(x, y);
+                        int brightness = (pixel.R + pixel.G + pixel.B) / 3;
+
+                        if (brightness <= EMPTY_THRESHOLD)
+                        {
+                            emptyPixels++;
+                        }
+
+                        totalPixels++;
+                    }
+                }
+            }
+
+            return (double)emptyPixels / totalPixels;
+        }
+
+        private void OptimizeWindow_Click(object sender, EventArgs e)
+        {
+            // Afficher les préréglages au lieu de l'optimisation automatique
+            ShowWindowPresetsMenu();
+        }
+
+        private void ShowWindowPresetsMenu()
+        {
+            var presetsMenu = new ContextMenuStrip();
+
+            // Préréglage spécifique pour carotides
+            AddPresetMenuItem(presetsMenu, "Angiographie (Carotides)", 300, 120);
+
+            // Préréglages pour différents types de tissus
+            AddPresetMenuItem(presetsMenu, "Tissus mous du cou", 350, 70);
+            AddPresetMenuItem(presetsMenu, "Cerveau", 80, 40);
+            AddPresetMenuItem(presetsMenu, "Poumon", 1500, -600);
+            AddPresetMenuItem(presetsMenu, "Os", 2500, 480);
+            AddPresetMenuItem(presetsMenu, "Contraste standard", 400, 50);
+
+            // Ajouter l'option d'optimisation automatique
+            var autoItem = new ToolStripMenuItem("Optimisation automatique");
+            autoItem.Click += (s, e) => OptimizeWindowSettings();
+            presetsMenu.Items.Add(autoItem);
+
+            // Afficher le menu contextuel à côté du bouton
+            presetsMenu.Show(optimizeWindowButton, new Point(0, optimizeWindowButton.Height));
+        }
+
+        private void AddPresetMenuItem(ContextMenuStrip menu, string name, int width, int center)
+        {
+            var item = new ToolStripMenuItem(name);
+            item.Click += (s, e) =>
+            {
+                windowWidthTrackBar.Value = Math.Min(windowWidthTrackBar.Maximum, Math.Max(windowWidthTrackBar.Minimum, width));
+                windowCenterTrackBar.Value = Math.Min(windowCenterTrackBar.Maximum, Math.Max(windowCenterTrackBar.Minimum, center));
+                UpdateDisplay();
+            };
+            menu.Items.Add(item);
+        }
+
+        private void OptimizeWindowSettings()
+        {
+            try
+            {
+                // Récupérer les données de pixel de l'image actuelle
+                var currentImage = displayManager.GetCurrentSliceImage(4000, 400); // Utiliser une fenêtre large pour l'analyse
+                using (var bitmap = new Bitmap(currentImage))
+                {
+                    int[] histogram = new int[4096]; // Pour les valeurs HU typiques
+                    int minValue = 4095;
+                    int maxValue = 0;
+                    int totalPixels = 0;
+
+                    // Calculer l'histogramme et trouver les valeurs min/max significatives
+                    for (int y = 0; y < bitmap.Height; y++)
+                    {
+                        for (int x = 0; x < bitmap.Width; x++)
+                        {
+                            var pixel = bitmap.GetPixel(x, y);
+                            int intensity = (pixel.R + pixel.G + pixel.B) / 3; // Niveau de gris moyen
+
+                            if (intensity > 0) // Ignorer les pixels noirs
+                            {
+                                histogram[intensity < 4096 ? intensity : 4095]++;
+                                totalPixels++;
+
+                                if (intensity < minValue) minValue = intensity;
+                                if (intensity > maxValue) maxValue = intensity;
+                            }
+                        }
+                    }
+
+                    // Ignorer les valeurs extrêmes (5% de chaque côté de l'histogramme)
+                    int minPixelCount = (int)(totalPixels * 0.05);
+                    int maxPixelCount = (int)(totalPixels * 0.95);
+                    int pixelSum = 0;
+
+                    int effectiveMin = 0;
+                    int effectiveMax = 4095;
+
+                    // Trouver les percentiles 5 et 95
+                    for (int i = 0; i < histogram.Length; i++)
+                    {
+                        pixelSum += histogram[i];
+                        if (pixelSum >= minPixelCount && effectiveMin == 0)
+                        {
+                            effectiveMin = i;
+                        }
+                        if (pixelSum >= maxPixelCount)
+                        {
+                            effectiveMax = i;
+                            break;
+                        }
+                    }
+
+                    // Calculer les nouveaux paramètres de fenêtre
+                    int newWindowWidth = effectiveMax - effectiveMin;
+                    int newWindowCenter = effectiveMin + (newWindowWidth / 2);
+
+                    // Appliquer des limites raisonnables
+                    newWindowWidth = Math.Max(50, Math.Min(windowWidthTrackBar.Maximum, newWindowWidth));
+                    newWindowCenter = Math.Max(0, Math.Min(windowCenterTrackBar.Maximum, newWindowCenter));
+
+                    // Mettre à jour les trackbars
+                    windowWidthTrackBar.Value = newWindowWidth;
+                    windowCenterTrackBar.Value = newWindowCenter;
+
+                    // Mettre à jour l'affichage
+                    UpdateDisplay();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Erreur lors de l'optimisation: {ex.Message}", "Erreur", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void Button_Click(object sender, EventArgs e)
