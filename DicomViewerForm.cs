@@ -39,7 +39,12 @@ namespace DeepBridgeWindowsApp
         private Label areaLabel;
         private Button optimizeWindowButton;
         private Button findNeckButton;
+        private Button findCarotidButton;
         private const int TARGET_SIZE = 512;
+
+        // Variables pour la sélection des carotides
+        private Rectangle carotidDisplayRect;
+        private bool showCarotidSelection = false;
 
         public DicomViewerForm(DicomReader reader)
         {
@@ -110,7 +115,7 @@ namespace DeepBridgeWindowsApp
             {
                 Dock = DockStyle.Bottom,
                 BackColor = SystemColors.Control,
-                Height = 80
+                Height = 120 // Augmenté pour accommoder le nouveau bouton
             };
 
             // Bouton pour trouver automatiquement le cou
@@ -124,6 +129,17 @@ namespace DeepBridgeWindowsApp
             };
             findNeckButton.Click += FindNeckButton_Click;
 
+            // Bouton pour trouver automatiquement les carotides
+            findCarotidButton = new Button
+            {
+                Dock = DockStyle.Bottom,
+                Text = "Localiser les carotides",
+                AutoSize = true,
+                Margin = new Padding(10, 5, 10, 5),
+                Height = 30
+            };
+            findCarotidButton.Click += FindCarotidButton_Click;
+
             var renderButton = new Button
             {
                 Dock = DockStyle.Bottom,
@@ -135,6 +151,7 @@ namespace DeepBridgeWindowsApp
             renderButton.Click += Button_Click;
 
             buttonPanel.Controls.Add(findNeckButton);
+            buttonPanel.Controls.Add(findCarotidButton);
             buttonPanel.Controls.Add(renderButton);
             infoPanel.Controls.Add(buttonPanel);
 
@@ -295,6 +312,78 @@ namespace DeepBridgeWindowsApp
             UpdateDisplay();
         }
 
+        private void FindCarotidButton_Click(object sender, EventArgs e)
+        {
+            if (doubleTrackBar.MinValue >= doubleTrackBar.MaxValue)
+            {
+                MessageBox.Show("Veuillez d'abord localiser le cou ou sélectionner une plage de coupes valide.",
+                                "Plage de coupes non définie",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Warning);
+                return;
+            }
+
+            // Réinitialiser le dessin manuel lorsqu'on utilise la localisation automatique
+            isDrawing = false;
+            startPoint = Point.Empty;
+            endPoint = Point.Empty;
+
+            LocalizeCarotidsSimplified();
+        }
+
+        private void LocalizeCarotidsSimplified()
+        {
+            try
+            {
+                Cursor = Cursors.WaitCursor;
+
+                // Utiliser un fenêtrage optimisé pour les vaisseaux
+                WindowPreset("Angiographie (Carotides)");
+
+                // Fixer des proportions pour le rectangle (par rapport à la taille du PictureBox)
+                double rectWidthPercent = 0.4;   // 40% de la largeur du PictureBox
+                double rectHeightPercent = 0.3;  // 30% de la hauteur du PictureBox
+
+                // Calculer la position et les dimensions du rectangle
+                int rectWidth = (int)(mainPictureBox.ClientSize.Width * rectWidthPercent);
+                int rectHeight = (int)(mainPictureBox.ClientSize.Height * rectHeightPercent);
+
+                // Positionner le rectangle au centre exact du PictureBox
+                int rectX = (mainPictureBox.ClientSize.Width - rectWidth) / 2;
+                int rectY = (mainPictureBox.ClientSize.Height - rectHeight) / 2;
+
+                // Stocker ces coordonnées dans l'espace d'affichage
+                carotidDisplayRect = new Rectangle(rectX, rectY, rectWidth, rectHeight);
+
+                // Calculer les coins du rectangle pour les afficher comme points de départ et d'arrivée
+                Point startPoint = new Point(rectX, rectY);
+                Point endPoint = new Point(rectX + rectWidth, rectY + rectHeight);
+
+                // Convertir les coordonnées pour les afficher dans le format de l'image
+                var startResized = ConvertToResizedCoordinates(startPoint);
+                var endResized = ConvertToResizedCoordinates(endPoint);
+
+                // Activer l'affichage
+                showCarotidSelection = true;
+                mainPictureBox.Invalidate();
+
+                // Mise à jour des informations dans le même format que la sélection manuelle
+                startPointLabel.Text = $"Start Point: ({startResized.X}, {startResized.Y})";
+                endPointLabel.Text = $"End Point: ({endResized.X}, {endResized.Y})";
+                areaLabel.Text = $"Area: {rectWidth * rectHeight}";
+
+                MessageBox.Show("Région des carotides sélectionnée.",
+                              "Localisation terminée", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                Cursor = Cursors.Default;
+            }
+            catch (Exception ex)
+            {
+                Cursor = Cursors.Default;
+                MessageBox.Show($"Erreur: {ex.Message}", "Erreur", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
         private void FindNeckButton_Click(object sender, EventArgs e)
         {
             FindNeckPosition();
@@ -389,7 +478,7 @@ namespace DeepBridgeWindowsApp
 
                         // Maintenant, déterminer les limites du cou
                         // Utiliser un seuil pour détecter des changements significatifs dans le ratio de vide
-                        double thresholdMultiplier = 0.9; // 80% du ratio maximum
+                        double thresholdMultiplier = 0.9; // 90% du ratio maximum
                         double threshold = maxEmptyRatio * thresholdMultiplier;
 
                         // Remonter depuis le cou pour trouver la limite supérieure (mâchoire)
@@ -525,6 +614,24 @@ namespace DeepBridgeWindowsApp
                 UpdateDisplay();
             };
             menu.Items.Add(item);
+        }
+
+        private void WindowPreset(string presetName)
+        {
+            // Appliquer un préréglage de fenêtrage
+            switch (presetName)
+            {
+                case "Angiographie (Carotides)":
+                    windowWidthTrackBar.Value = Math.Min(windowWidthTrackBar.Maximum, Math.Max(windowWidthTrackBar.Minimum, 300));
+                    windowCenterTrackBar.Value = Math.Min(windowCenterTrackBar.Maximum, Math.Max(windowCenterTrackBar.Minimum, 120));
+                    break;
+                case "Tissus mous du cou":
+                    windowWidthTrackBar.Value = Math.Min(windowWidthTrackBar.Maximum, Math.Max(windowWidthTrackBar.Minimum, 350));
+                    windowCenterTrackBar.Value = Math.Min(windowCenterTrackBar.Maximum, Math.Max(windowCenterTrackBar.Minimum, 70));
+                    break;
+                    // Autres préréglages au besoin
+            }
+            UpdateDisplay();
         }
 
         private void OptimizeWindowSettings()
@@ -727,6 +834,9 @@ namespace DeepBridgeWindowsApp
         {
             if (e.Button == MouseButtons.Left)
             {
+                // Désactiver l'affichage de la sélection des carotides quand on commence un dessin manuel
+                showCarotidSelection = false;
+
                 isDrawing = true;
                 startPoint = e.Location;
                 var resizedPoint = ConvertToResizedCoordinates(startPoint);
@@ -734,6 +844,7 @@ namespace DeepBridgeWindowsApp
                 {
                     startPointLabel.Text = $"Start Point: ({resizedPoint.X}, {resizedPoint.Y})";
                 }
+                mainPictureBox.Invalidate();
             }
         }
 
@@ -778,10 +889,33 @@ namespace DeepBridgeWindowsApp
 
         private void MainPictureBox_Paint(object sender, PaintEventArgs e)
         {
+            // Dessiner le rectangle de sélection manuel (si en cours de dessin)
             if (isDrawing || startPoint != endPoint)
             {
                 var rect = GetRectangle(startPoint, endPoint);
                 e.Graphics.DrawRectangle(Pens.Red, rect);
+            }
+
+            // Dessiner le rectangle des carotides si activé
+            if (showCarotidSelection)
+            {
+                // Dessiner directement le rectangle avec les coordonnées d'affichage
+                using (Pen redPen = new Pen(Color.Red, 2))
+                {
+                    e.Graphics.DrawRectangle(redPen, carotidDisplayRect);
+
+                    // Calculer les coordonnées des points marqueurs
+                    int centerX = carotidDisplayRect.X + carotidDisplayRect.Width / 2;
+                    int centerY = carotidDisplayRect.Y + carotidDisplayRect.Height / 2;
+
+                    // Placer les points à 1/4 et 3/4 de la largeur
+                    int leftX = carotidDisplayRect.X + carotidDisplayRect.Width / 4;
+                    int rightX = carotidDisplayRect.X + carotidDisplayRect.Width * 3 / 4;
+
+                    // Dessiner les points
+                    e.Graphics.FillEllipse(Brushes.Red, leftX - 3, centerY - 3, 6, 6);
+                    e.Graphics.FillEllipse(Brushes.Red, rightX - 3, centerY - 3, 6, 6);
+                }
             }
         }
 
