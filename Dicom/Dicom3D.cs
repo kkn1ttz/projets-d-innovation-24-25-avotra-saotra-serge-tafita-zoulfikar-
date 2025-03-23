@@ -145,15 +145,15 @@ namespace DeepBridgeWindowsApp.Dicom
         private int sliceWidth;  // Original slice width
         private int sliceHeight; // Original slice height
 
-        public Dicom3D(DicomDisplayManager ddm, int minSlice, int maxSlice, Action<ProcessingProgress> progressCallback = null)
+        public Dicom3D(DicomDisplayManager ddm, int minSlice, int maxSlice, Rectangle? carotidRect = null, Action < ProcessingProgress> progressCallback = null)
         {
             this.progressCallback = progressCallback;
             this.totalSlices = ddm.GetTotalSlices();
-            ProcessSlices(ddm, minSlice, maxSlice);
+            ProcessSlices(ddm, minSlice, maxSlice, carotidRect);
             currentVisibleIndices = indices.Count;
         }
 
-        private void ProcessSlices(DicomDisplayManager ddm, int minSlice, int maxSlice)
+        private void ProcessSlices(DicomDisplayManager ddm, int minSlice, int maxSlice, Rectangle? carotidRect = null)
         {
             // Get pixel spacing (in mm)
             var pixelSpacing = ddm.GetSlice(0).PixelSpacing;
@@ -221,6 +221,15 @@ namespace DeepBridgeWindowsApp.Dicom
                         {
                             for (int x = 0; x < slice.Width; x++)
                             {
+                                if (carotidRect.HasValue)
+                                {
+                                    if (x < carotidRect.Value.X || x > carotidRect.Value.Right ||
+                                        y < carotidRect.Value.Y || y > carotidRect.Value.Bottom)
+                                    {
+                                        continue; // Skip pixels outside the carotid rectangle
+                                    }
+                                }
+
                                 int offset = y * bitmapData.Stride + x * 4;
                                 byte b = ptr[offset];
                                 byte g = ptr[offset + 1];

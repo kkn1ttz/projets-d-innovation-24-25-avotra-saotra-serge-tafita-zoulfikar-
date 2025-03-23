@@ -186,8 +186,16 @@ namespace DeepBridgeWindowsApp
             viewDicomButton.Enabled = false;
 
             // Get directories that directly contain .dcm files (no recursion)
-            var directories = Directory.GetDirectories(path)
-                .Where(dir => Directory.GetFiles(dir, "*.dcm").Length > 0);
+            var directories = Enumerable.Empty<string>();
+            try
+            {
+                directories = Directory.GetDirectories(path)
+                    .Where(dir => Directory.GetFiles(dir, "*.dcm").Length > 0);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error loading directory: {ex.Message}");
+            }
 
             // Add directories with DICOM files to the list
             foreach (var dir in directories)
@@ -209,10 +217,18 @@ namespace DeepBridgeWindowsApp
             }
 
             // Check if current directory has DICOM files
-            var currentDirDicomFiles = Directory.GetFiles(path, "*.dcm");
-            if (currentDirDicomFiles.Length > 0)
+            var currentDirDicomFiles = new string[] { };
+            try
             {
-                ShowDicomInfo(path);
+                currentDirDicomFiles = Directory.GetFiles(path, "*.dcm");
+                if (currentDirDicomFiles.Length > 0)
+                {
+                    ShowDicomInfo(path);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error loading current directory: {ex.Message}");
             }
         }
 

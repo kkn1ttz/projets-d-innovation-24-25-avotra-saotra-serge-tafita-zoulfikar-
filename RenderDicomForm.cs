@@ -80,6 +80,7 @@ namespace DeepBridgeWindowsApp
         private CancellationTokenSource _sliceUpdateCts;
         private readonly int _debounceMs = 150; // Adjust this value to control debounce timing
         private Task _currentSliceTask;
+        private Rectangle? carotidRect;
 
         // Shaders
         private int shaderProgram;
@@ -123,13 +124,14 @@ namespace DeepBridgeWindowsApp
             FragColor = vec4(color, 0.5);
         }";
 
-        public RenderDicomForm(DicomDisplayManager ddm, int minSlice, int maxSlice, string patientDirectory)
+        public RenderDicomForm(DicomDisplayManager ddm, int minSlice, int maxSlice, string patientDirectory, Rectangle? carotidRect = null)
         {
             this.ddm = ddm;
             this.minSlice = minSlice;
             this.maxSlice = maxSlice;
             this.dicom = this.ddm.globalView;
             this.sliceWidth = ddm.GetSlice(0).Columns;
+            this.carotidRect = carotidRect;
             this.patientDirectory = patientDirectory;
             InitializeComponents();
             InitializeKeyboardControls();
@@ -663,7 +665,7 @@ namespace DeepBridgeWindowsApp
                         gl.Focus();
                     });
 
-                    this.render = new Dicom3D(this.ddm, minSlice, maxSlice, UpdateProgress);
+                    this.render = new Dicom3D(this.ddm, minSlice, maxSlice, carotidRect, UpdateProgress);
 
                     this.Invoke((MethodInvoker)delegate
                     {

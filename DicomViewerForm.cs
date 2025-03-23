@@ -15,6 +15,8 @@ using System.Runtime.InteropServices;
 using System.Security.Policy;
 using DeepBridgeWindowsApp.Dicom;
 using System.IO;
+using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace DeepBridgeWindowsApp
 {
@@ -38,6 +40,7 @@ namespace DeepBridgeWindowsApp
         private Label endPointLabel;
         private Label areaLabel;
         private Button optimizeWindowButton;
+        private Button resetSelectionButton;
         private Button findNeckButton;
         private Button findCarotidButton;
         private const int TARGET_SIZE = 512;
@@ -150,6 +153,17 @@ namespace DeepBridgeWindowsApp
             };
             renderButton.Click += Button_Click;
 
+            resetSelectionButton = new Button
+            {
+                Dock = DockStyle.Bottom,
+                Text = "Réinitialiser les sélections",
+                AutoSize = true,
+                Margin = new Padding(10, 5, 10, 5),
+                Height = 30
+            };
+            resetSelectionButton.Click += ResetSelection_Click;
+
+            buttonPanel.Controls.Add(resetSelectionButton);
             buttonPanel.Controls.Add(findNeckButton);
             buttonPanel.Controls.Add(findCarotidButton);
             buttonPanel.Controls.Add(renderButton);
@@ -711,6 +725,30 @@ namespace DeepBridgeWindowsApp
             }
         }
 
+        private void ResetSelection_Click(object sender, EventArgs e)
+        {
+            // Reset neck slice locator
+            doubleTrackBar.MinValue = 0;
+            doubleTrackBar.MaxValue = displayManager.GetTotalSlices();
+            minLabel.Text = "Min: 0";
+            maxLabel.Text = $"Max: {displayManager.GetTotalSlices()}";
+
+            // Reset carotid selection
+            showCarotidSelection = false;
+            carotidDisplayRect = Rectangle.Empty;
+            startPoint = Point.Empty;
+            endPoint = Point.Empty;
+            startPointLabel.Text = "Start Point: (0, 0)";
+            endPointLabel.Text = "End Point: (0, 0)";
+            areaLabel.Text = "Area: 0";
+
+            // Redraw the picture box to clear any selection rectangle
+            mainPictureBox.Invalidate();
+
+            MessageBox.Show("Toutes les sélections ont été réinitialisées.", "Réinitialisation terminée",
+                           MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
         private void Button_Click(object sender, EventArgs e)
         {
             // Récupérer le chemin du dossier patient
@@ -722,8 +760,28 @@ namespace DeepBridgeWindowsApp
             // Combiner le chemin avec le nom du dossier
             string fullPath = Path.Combine(basePath, scanFolderName);
 
-            var renderForm = new RenderDicomForm(displayManager, doubleTrackBar.MinValue, doubleTrackBar.MaxValue, fullPath);
+            Rectangle? carotidRect = null;
 
+            if (carotidDisplayRect != Rectangle.Empty)
+            {
+                // Always convert display coordinates to image coordinates
+                var topLeft = ConvertToResizedCoordinates(new Point(carotidDisplayRect.X, carotidDisplayRect.Y));
+                var bottomRight = ConvertToResizedCoordinates(new Point(carotidDisplayRect.Right, carotidDisplayRect.Bottom));
+
+                if (topLeft != Point.Empty && bottomRight != Point.Empty)
+                {
+                    carotidRect = new Rectangle(
+                        topLeft.X,
+                        topLeft.Y,
+                        bottomRight.X - topLeft.X,
+                        bottomRight.Y - topLeft.Y
+                    );
+
+                    Debug.WriteLine("Carotid Rect (image coordinates): " + carotidRect);
+                }
+            }
+
+            var renderForm = new RenderDicomForm(displayManager, doubleTrackBar.MinValue, doubleTrackBar.MaxValue, fullPath, carotidRect);
             renderForm.Show();
         }
 
@@ -877,10 +935,24 @@ namespace DeepBridgeWindowsApp
                 if (resizedPoint != Point.Empty)
                 {
                     endPointLabel.Text = $"End Point: ({resizedPoint.X}, {resizedPoint.Y})";
-                    var resizedRect = GetResizedRectangle(GetRectangle(startPoint, endPoint));
+
+                    // Get display rectangle (for drawing)
+                    var displayRect = GetRectangle(startPoint, endPoint);
+
+                    // Get resized rectangle (for coordinates in image space)
+                    var resizedRect = GetResizedRectangle(displayRect);
+
                     if (resizedRect != Rectangle.Empty)
                     {
                         areaLabel.Text = $"Area: {resizedRect.Width * resizedRect.Height}";
+
+                        // Store the display rectangle for later use
+                        carotidDisplayRect = displayRect;
+
+                        // IMPORTANT: Enable the selection for 3D rendering
+                        showCarotidSelection = true;
+
+                        Debug.WriteLine($"Manual rectangle: Display={displayRect}, Image={resizedRect}");
                     }
                 }
                 mainPictureBox.Invalidate();
