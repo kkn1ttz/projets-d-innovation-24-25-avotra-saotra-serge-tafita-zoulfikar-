@@ -2,53 +2,53 @@
 
 ## Introduction
 
-DeepBridge DICOM Viewer est une application de visualisation d'images DICOM en 2D et 3D. Elle a ÈtÈ dÈveloppÈe dans le cadre du projet DeepBridge, un projet de recherche en collaboration avec le CHU de Nice.
+DeepBridge DICOM Viewer est une application de visualisation d'images DICOM en 2D et 3D. Elle a √©t√© d√©velopp√©e dans le cadre du projet DeepBridge, un projet de recherche en collaboration avec le CHU de Nice.
 
 ## Membres
 
-- ClÈment COLIN
+- Cl√©ment COLIN
 - Thomas CHOUBRAC
 - Florian BARRALI
 
 ## Installation et Configuration
 
-## PrÈrequis
+## Pr√©requis
 
-Pour pouvoir exÈcuter et dÈvelopper ce projet, vous aurez besoin des ÈlÈments suivants :
+Pour pouvoir ex√©cuter et d√©velopper ce projet, vous aurez besoin des √©l√©ments suivants :
 
-- **.NET SDK** : version 8.0 ou supÈrieure
-- **Visual Studio** : 2022 ou version ultÈrieure avec les charges de travail suivantes :
-  - DÈveloppement .NET Desktop
-  - DÈveloppement Windows Universal Platform
+- **.NET SDK** : version 8.0 ou sup√©rieure
+- **Visual Studio** : 2022 ou version ult√©rieure avec les charges de travail suivantes :
+  - D√©veloppement .NET Desktop
+  - D√©veloppement Windows Universal Platform
   
-- **Packages NuGet** (installÈs automatiquement via le fichier projet) :
+- **Packages NuGet** (install√©s automatiquement via le fichier projet) :
   - EvilDICOM (version 3.0.8998.340)
   - OpenTK (version 4.9.3)
 
-### Configuration des donnÈes
+### Configuration des donn√©es
 
-Pour utiliser l'application correctement, veuillez suivre ces Ètapes pour l'installation des donnÈes DICOM :
+Pour utiliser l'application correctement, veuillez suivre ces √©tapes pour l'installation des donn√©es DICOM :
 
-1. CrÈez un dossier nommÈ `dataset_chu_nice_2020_2021` ‡ la racine de votre disque.
-2. Extrayez l'ensemble des donnÈes du scan dans ce dossier
-3. La structure des dossiers doit Ítre comme suit :
+1. Cr√©ez un dossier nomm√© `dataset_chu_nice_2020_2021` √† la racine de votre disque.
+2. Extrayez l'ensemble des donn√©es du scan dans ce dossier
+3. La structure des dossiers doit √™tre comme suit :
    ```
-   C:\dataset_chu_nice_2020_2021\scan\[dossier patient]\[dossier Ètude]\[sÈrie d'images]\*.dcm
+   C:\dataset_chu_nice_2020_2021\scan\[dossier patient]\[dossier √©tude]\[s√©rie d'images]\*.dcm
    ```
 
-**Important** : L'utilisation du chemin ‡ la racine du disque est nÈcessaire pour Èviter les problËmes liÈs ‡ la limitation de longueur des chemins dans Windows et C#.
+**Important** : L'utilisation du chemin √† la racine du disque est n√©cessaire pour √©viter les probl√®mes li√©s √† la limitation de longueur des chemins dans Windows et C#.
 
-### Modification du chemin par dÈfaut
+### Modification du chemin par d√©faut
 
-Pour configurer l'application avec vos donnÈes DICOM, vous devez modifier le chemin du rÈpertoire par dÈfaut dans le fichier `MainForm.cs` :
+Pour configurer l'application avec vos donn√©es DICOM, vous devez modifier le chemin du r√©pertoire par d√©faut dans le fichier `MainForm.cs` :
 
 1. Ouvrez le fichier `MainForm.cs` dans Visual Studio
-2. Localisez la ligne suivante (vers le dÈbut de la classe) :
+2. Localisez la ligne suivante (vers le d√©but de la classe) :
    ```csharp
    private readonly string defaultDirectory = @"D:\ECOLE\dataset_chu_nice_2020_2021\scan\SF103E8_10.241.3.232_20210118173900817_CT\SF103E8_10.241.3.232_20210118173900817";
    ```
 
-3. Remplacez-la par le chemin complet vers votre dossier de donnÈes DICOM, par exemple :
+3. Remplacez-la par le chemin complet vers votre dossier de donn√©es DICOM, par exemple :
    ```csharp
    private readonly string defaultDirectory = @"C:\dataset_chu_nice_2020_2021\scan\SF103E8_10.241.3.232_20210118173228207_CT_SR\SF103E8_10.241.3.232_20210118173228207";
    ```
@@ -56,18 +56,30 @@ Pour configurer l'application avec vos donnÈes DICOM, vous devez modifier le che
 ## Format du chemin
 Le format attendu est :
 ```
-[Lecteur]:\dataset_chu_nice_2020_2021\scan\[dossier patient]\[dossier Ètude]
+[Lecteur]:\dataset_chu_nice_2020_2021\scan\[dossier patient]\[dossier √©tude]
 ```
 
-**Important :** Assurez-vous que le chemin spÈcifiÈ dans `defaultDirectory` pointe vers le dossier parent qui contient les sÈries d'images DICOM, et non directement vers le dossier contenant les fichiers DICOM (*.dcm).
+**Important :** Assurez-vous que le chemin sp√©cifi√© dans `defaultDirectory` pointe vers le dossier parent qui contient les s√©ries d'images DICOM, et non directement vers le dossier contenant les fichiers DICOM (*.dcm).
 
 ### Notes techniques
 
-- **CompatibilitÈ graphique** : Les couleurs OpenGL fonctionnent correctement avec les cartes graphiques AMD, mais peuvent prÈsenter des problËmes avec les cartes NVIDIA.
+- **Compatibilit√© graphique** : Les couleurs OpenGL fonctionnent correctement avec les cartes graphiques AMD, mais peuvent pr√©senter des probl√®mes avec les cartes NVIDIA.
 
-## FonctionnalitÈs principales
+## Fonctionnalit√©s principales
 
 - Visualisation des images DICOM en 2D
 - Rendu 3D des structures anatomiques
 - Localisation automatique du cou et des carotides
-- Extraction de coupes personnalisÈes avec contrÙle des angles
+- Extraction de coupes personnalis√©es avec contr√¥le des angles
+
+## Branche de refactorisation
+
+Une branche nomm√©e `refacto` est disponible dans le d√©p√¥t. Cette branche contient un travail en cours de refactorisation de l'application visant √† :
+
+- Am√©liorer l'architecture globale du code
+- Renforcer la gestion de la m√©moire avec une impl√©mentation plus rigoureuse du pattern IDisposable
+- Clarifier les responsabilit√©s des diff√©rentes classes
+
+Il est important de noter que ce travail de refactorisation n'est pas achev√©. En particulier, la partie concernant le rendu 3D n√©cessite encore des am√©liorations significatives. 
+
+N√©anmoins, examiner cette branche peut √™tre utile pour mieux comprendre la structure du projet.
