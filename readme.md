@@ -72,6 +72,26 @@ Le format attendu est :
 - Localisation automatique du cou et des carotides
 - Extraction de coupes personnalisées avec contrôle des angles
 
+## Les différentes vues de l'application
+
+### 1. Vue principale (Explorateur de séries)
+
+![image](https://github.com/user-attachments/assets/00fb3a42-e3e1-4fb1-80b2-cc5d7c6ceabb)
+
+La première vue de l'application vous permet de naviguer dans les dossiers et de sélectionner une série DICOM à visualiser. La partie gauche affiche la liste des séries disponibles, tandis que la partie droite montre un aperçu et les informations de la série sélectionnée.
+
+### 2. Vue DICOM 2D (Visualiseur de coupes)
+
+![image](https://github.com/user-attachments/assets/886707ed-a0d2-45a9-b798-1493911211a2)
+
+Cette vue permet de visualiser les coupes individuelles de la série DICOM. Vous pouvez naviguer entre les coupes à l'aide du curseur en bas, ajuster le fenêtrage (window/level) pour modifier le contraste, et utiliser les outils de sélection automatique pour localiser le cou et les carotides.
+
+### 3. Vue Rendu 3D
+
+![image](https://github.com/user-attachments/assets/7db8b21c-9f23-48f9-b0e5-e05430773aef)
+
+La dernière vue présente un rendu volumétrique 3D des données DICOM. Vous pouvez faire pivoter le modèle avec la souris, zoomer avec la molette, et vous déplacer avec les touches ZQSD (ou WASD). Les panneaux de contrôle sur la gauche permettent d'extraire des coupes arbitraires et d'ajuster la visualisation.
+
 ## Branche de refactorisation
 
 Une branche nommée `refacto` est disponible dans le dépôt. Cette branche contient un travail en cours de refactorisation de l'application visant à :
