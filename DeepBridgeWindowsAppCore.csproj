@@ -74,4 +74,10 @@
     <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
     <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.0" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Update="CreditsForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Update="MyNewPage.cs" />
+  </ItemGroup>
 </Project>

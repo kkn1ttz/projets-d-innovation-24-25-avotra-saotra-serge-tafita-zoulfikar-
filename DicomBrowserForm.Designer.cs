@@ -1,6 +1,6 @@
 ﻿namespace DeepBridgeWindowsApp
 {
-    partial class MainForm
+    partial class DicomBrowserForm
     {
         /// <summary>
         /// Required designer variable.
